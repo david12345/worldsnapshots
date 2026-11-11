@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorldSnapshots</title>
+<!-- Versão sem servidor: gerada por `npm run build:static` a partir de static/template.html. -->
+<style>
+/*__STYLE__*/
+.settings { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.settings select, .settings input { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.settings input { width: 180px; }
+.card.loading .img::after { content: 'a carregar…'; position: absolute; inset: 0; display: grid; place-items: center; color: #888; font-size: 12px; }
+.card .img img { opacity: 0; transition: opacity .3s; }
+.card .img img.ok { opacity: 1; }
+dialog a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>WorldSnapshots</h1>
+    <p>Câmaras públicas pelo mundo · versão sem servidor</p>
+  </div>
+  <div class="actions">
+    <button id="btn-sync" title="Recarregar as imagens das mesmas câmaras">⟳ Sincronizar</button>
+    <button id="btn-reshuffle" class="ghost" title="Escolher outras câmaras">🎲 Novas câmaras</button>
+  </div>
+</header>
+
+<section class="bar">
+  <div class="status" id="status">A pesquisar fontes…</div>
+  <div class="settings">
+    <label>Intervalo
+      <select id="sel-interval">
+        <option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option>
+        <option value="30">30 min</option><option value="60">1 h</option><option value="0">desligado</option>
+      </select>
+    </label>
+    <label>Câmaras
+      <select id="sel-count"><option>12</option><option>24</option><option>50</option><option>100</option></select>
+    </label>
+    <label title="Chave gratuita em api.windy.com/keys — ativa webcams de todo o mundo">Windy
+      <input id="inp-windy" type="password" placeholder="chave (opcional)" autocomplete="off">
+    </label>
+  </div>
+</section>
+
+<main id="grid" aria-live="polite"></main>
+<p id="empty" class="empty" hidden></p>
+
+<dialog id="modal">
+  <form method="dialog"><button class="close" aria-label="Fechar">✕</button></form>
+  <h2 id="m-title"></h2>
+  <p id="m-sub"></p>
+  <img id="m-img" alt="">
+</dialog>
+
+<script id="embedded-catalog" type="application/json">/*__CATALOG__*/</script>
+<script>
+'use strict';
+// ---- Código partilhado com a versão Node (embutido na build) ----
+/*__SHARED__*/
+
+// ---- Aplicação ----
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('ws:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch { /* sem storage */ } },
+  };
+
+  const settings = {
+    interval: store.get('interval', 5),
+    count: store.get('count', 50),
+    windyApiKey: store.get('windy', ''),
+    maxPerGroup: 8,
+  };
+
+  const embedded = (() => {
+    try { return JSON.parse($('#embedded-catalog').textContent) || null; } catch { return null; }
+  })();
+
+  const state = {
+    cameras: new Map(),      // id -> câmara
+    status: {},              // provider id -> { ok, count, error, live }
+    queue: [],               // candidatos ainda não usados
+    shown: [],               // câmaras visíveis (ordem da grelha)
+    failed: new Set(),
+    lastSync: null,
+    nextSync: null,
+    timer: null,
+  };
+
+  const flag = (cc) => (/^[A-Z]{2}$/i.test(cc || '')
+    ? String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0))) : '🌐');
+  const fmt = (d) => d.toLocaleTimeString('pt-PT');
+  const pageIsHttps = location.protocol === 'https:';
+
+  // ---- HTTP no browser (sujeito a CORS) ----
+  async function req(url, { headers = {} } = {}) {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res;
+  }
+  const ctx = {
+    getJson: async (u, o) => (await req(u, o)).json(),
+    getText: async (u, o) => (await req(u, o)).text(),
+    get config() { return { windyApiKey: settings.windyApiKey }; },
+  };
+
+  function setProviderCams(p, cams, info) {
+    for (const [id, c] of state.cameras) if (c.provider === p.id) state.cameras.delete(id);
+    for (const c of cams) {
+      if (pageIsHttps && c.imageUrl.startsWith('http:')) continue; // conteúdo misto bloqueado
+      delete c.headers;
+      state.cameras.set(c.id, c);
+    }
+    state.status[p.id] = { name: p.name, ...info };
+  }
+
+  async function discoverLive(p) {
+    try {
+      const cams = normalize(p, await p.discover(ctx));
+      setProviderCams(p, cams, { ok: true, count: cams.length, live: true });
+    } catch (e) {
+      const prev = state.status[p.id];
+      // Sem acesso direto (normalmente CORS): usa o catálogo embutido, se existir.
+      state.status[p.id] = prev?.count
+        ? { ...prev, live: false, error: e.message }
+        : { name: p.name, ok: false, count: 0, error: e.message };
+    }
+  }
+
+  const activeProviders = () => PROVIDERS.filter((p) => (p.enabled ? p.enabled(ctx.config) : true));
+
+  async function loadCatalog() {
+    if (embedded?.cameras?.length) {
+      for (const p of PROVIDERS) {
+        const cams = embedded.cameras.filter((c) => c.provider === p.id);
+        if (cams.length) setProviderCams(p, cams, { ok: true, count: cams.length, live: false });
+      }
+    }
+    await Promise.all(activeProviders().map(discoverLive));
+  }
+
+  // ---- Seleção e grelha ----
+  function select(reshuffle) {
+    const prev = reshuffle ? [] : store.get('selection', []);
+    const ranked = rankCandidates([...state.cameras.values()], { previousIds: prev, maxPerGroup: settings.maxPerGroup });
+    state.failed.clear();
+    state.shown = ranked.slice(0, settings.count);
+    state.queue = ranked.slice(settings.count);
+    renderGrid();
+  }
+
+  const withBuster = (c, t) => {
+    const p = PROVIDERS.find((x) => x.id === c.provider);
+    if (p?.volatile) return c.imageUrl; // URLs assinados: não se podem alterar
+    return c.imageUrl + (c.imageUrl.includes('?') ? '&' : '?') + '_ws=' + t;
+  };
+
+  function nextCandidate() {
+    while (state.queue.length) {
+      const c = state.queue.shift();
+      if (state.cameras.has(c.id) && !state.failed.has(c.id)) return state.cameras.get(c.id);
+    }
+    return null;
+  }
+
+  function makeCard(cam, t) {
+    const el = document.createElement('article');
+    el.className = 'card loading';
+    el.innerHTML = '<div class="img"><img alt="" referrerpolicy="no-referrer"><span class="badge"></span></div>' +
+      '<div class="meta"><div class="city"></div><div class="name"></div><div class="time"></div></div>';
+    el.addEventListener('click', () => openCamera(el._cam, el.querySelector('img').src));
+    const img = el.querySelector('img');
+    img.addEventListener('load', () => {
+      // Imagens minúsculas costumam ser "câmara indisponível".
+      if (img.naturalWidth < 120 || img.naturalHeight < 80) return img.dispatchEvent(new Event('error'));
+      el.classList.remove('loading');
+      img.classList.add('ok');
+      el.querySelector('.time').textContent = 'atualizado ' + fmt(new Date());
+      saveSelection();
+    });
+    img.addEventListener('error', () => {
+      state.failed.add(el._cam.id);
+      const repl = nextCandidate();
+      if (!repl) { el.remove(); state.shown = state.shown.filter((c) => c.id !== el._cam.id); renderStatus(); return; }
+      const i = state.shown.findIndex((c) => c.id === el._cam.id);
+      if (i >= 0) state.shown[i] = repl;
+      fillCard(el, repl, Date.now());
+    });
+    fillCard(el, cam, t);
+    return el;
+  }
+
+  function fillCard(el, cam, t) {
+    el._cam = cam;
+    el.dataset.id = cam.id;
+    el.classList.add('loading');
+    el.querySelector('img').classList.remove('ok');
+    el.querySelector('img').alt = cam.name + ' — ' + cam.city;
+    el.querySelector('.badge').textContent = cam.providerName || cam.provider;
+    el.querySelector('.city').textContent = flag(cam.country) + ' ' + cam.city;
+    el.querySelector('.name').textContent = cam.name;
+    el.querySelector('.time').textContent = '';
+    el.querySelector('img').src = withBuster(cam, t);
+  }
+
+  function renderGrid() {
+    const t = Date.now();
+    $('#grid').replaceChildren(...state.shown.map((c) => makeCard(c, t)));
+    const empty = $('#empty');
+    empty.hidden = state.shown.length > 0;
+    empty.innerHTML = 'Nenhuma fonte respondeu diretamente ao browser (normalmente por CORS). ' +
+      'Gera a versão com catálogo embutido com <code>npm run build:static</code>, ' +
+      'ou adiciona uma chave Windy acima.';
+    renderStatus();
+  }
+
+  let saveTimer;
+  function saveSelection() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => store.set('selection', state.shown.map((c) => c.id)), 1000);
+  }
+
+  // ---- Sincronização periódica ----
+  async function sync() {
+    $('#btn-sync').disabled = true;
+    // Fontes com URLs temporários têm de ser redescobertas para obter imagens novas.
+    await Promise.all(activeProviders().filter((p) => p.volatile).map(discoverLive));
+    const t = Date.now();
+    for (const el of $('#grid').children) {
+      const cam = state.cameras.get(el._cam.id) || el._cam;
+      el._cam = cam;
+      el.querySelector('img').src = withBuster(cam, t);
+    }
+    state.lastSync = new Date();
+    $('#btn-sync').disabled = false;
+    schedule();
+  }
+
+  function schedule() {
+    clearTimeout(state.timer);
+    state.nextSync = settings.interval > 0 ? Date.now() + settings.interval * 60000 : null;
+    if (state.nextSync) state.timer = setTimeout(sync, settings.interval * 60000);
+    renderStatus();
+  }
+
+  function renderStatus() {
+    const st = Object.values(state.status);
+    const parts = [];
+    parts.push(state.shown.length + ' câmaras visíveis de ' + state.cameras.size.toLocaleString('pt-PT'));
+    parts.push(st.filter((s) => s.ok).length + '/' + st.length + ' fontes');
+    if (state.lastSync) parts.push('sincronizado às ' + fmt(state.lastSync));
+    if (state.nextSync) {
+      const s = Math.max(0, Math.round((state.nextSync - Date.now()) / 1000));
+      parts.push('próximo em ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'));
+    }
+    $('#status').textContent = parts.join(' · ');
+    $('#status').title = Object.entries(state.status).map(([id, s]) =>
+      (s.ok ? '✓ ' : '✗ ') + (s.name || id) + ': ' +
+      (s.ok ? s.count + ' câmaras' + (s.live ? ' (ao vivo)' : ' (catálogo embutido)') : s.error)).join('\n') +
+      (embedded?.builtAt ? '\n\nCatálogo embutido de ' + new Date(embedded.builtAt).toLocaleString('pt-PT') : '');
+  }
+
+  function openCamera(c, src) {
+    $('#m-title').textContent = flag(c.country) + ' ' + c.city + ' — ' + c.name;
+    const sub = $('#m-sub');
+    sub.textContent = c.providerName + ' ';
+    if (c.lat != null) {
+      const a = document.createElement('a');
+      a.href = 'https://www.openstreetmap.org/?mlat=' + c.lat + '&mlon=' + c.lon + '#map=16/' + c.lat + '/' + c.lon;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '· ver no mapa';
+      sub.append(a);
+    }
+    $('#m-img').src = src;
+    $('#modal').showModal();
+  }
+
+  // ---- Controlos ----
+  $('#sel-interval').value = String(settings.interval);
+  $('#sel-count').value = String(settings.count);
+  $('#inp-windy').value = settings.windyApiKey;
+  $('#sel-interval').onchange = (e) => { settings.interval = Number(e.target.value); store.set('interval', settings.interval); schedule(); };
+  $('#sel-count').onchange = (e) => { settings.count = Number(e.target.value); store.set('count', settings.count); select(false); };
+  $('#inp-windy').onchange = async (e) => {
+    settings.windyApiKey = e.target.value.trim();
+    store.set('windy', settings.windyApiKey);
+    $('#status').textContent = 'A pesquisar webcams Windy…';
+    const w = PROVIDERS.find((p) => p.id === 'windy');
+    if (settings.windyApiKey) await discoverLive(w); else setProviderCams(w, [], { ok: false, count: 0, error: 'sem chave' });
+    select(true);
+  };
+  $('#btn-sync').onclick = () => sync();
+  $('#btn-reshuffle').onclick = () => select(true);
+  setInterval(renderStatus, 1000);
+
+  loadCatalog().then(() => { select(false); state.lastSync = new Date(); schedule(); });
+})();
+</script>
+</body>
+</html>

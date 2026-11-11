@@ -4,26 +4,9 @@ import { config } from './config.js';
 import { getJson, getText } from './http.js';
 import { getProviders } from './providers/index.js';
 import { paths, readJson, writeJson } from './store.js';
+import { normalize } from './normalize.js';
 
-const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
-
-export function normalize(provider, raw) {
-  return raw
-    .filter((c) => c && c.rawId != null && isHttp(c.imageUrl))
-    .map((c) => ({
-      id: `${provider.id}:${c.rawId}`,
-      provider: provider.id,
-      providerName: provider.name,
-      group: c.group || provider.id,
-      name: String(c.name ?? c.rawId).trim(),
-      city: c.city || provider.city || '',
-      country: c.country || provider.country || '',
-      lat: Number.isFinite(c.lat) ? c.lat : null,
-      lon: Number.isFinite(c.lon) ? c.lon : null,
-      imageUrl: c.imageUrl,
-      ...(c.headers ? { headers: c.headers } : {}),
-    }));
-}
+export { normalize };
 
 /**
  * @param {object} opts

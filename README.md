@@ -41,6 +41,32 @@ npm test
    navegar pelas sincronizações, botão ▶ de timelapse, modo "ao vivo" que
    atualiza sozinho, e clique numa câmara para ver o histórico dela.
 
+## Versão sem servidor (um só ficheiro HTML)
+
+Abre **`worldsnapshots.html`** diretamente no browser (duplo clique) ou publica-o
+em qualquer alojamento estático (GitHub Pages, Netlify…). Não precisa de Node.
+
+O browser vai buscar as listas de câmaras diretamente às APIs e mostra as imagens
+com `<img>`, recarregando-as no intervalo escolhido (1 min a 1 h). As preferências
+e a seleção de câmaras ficam guardadas no próprio browser.
+
+Limitações em relação à versão com servidor:
+
+- **CORS:** o browser só consegue ler a lista de câmaras das APIs que o permitem.
+  As que não permitem aparecem com ✗ na barra de estado (passa o rato por cima).
+  Para as incluir, gera o ficheiro com um catálogo embutido:
+  ```bash
+  npm run build:static              # → dist/worldsnapshots.html (usa data/catalog.json ou pesquisa as fontes)
+  npm run build:static -- --discover   # força nova pesquisa
+  ```
+  As imagens em si não têm este problema e funcionam a partir de qualquer fonte.
+- **Sem histórico/timelapse:** o browser mostra a imagem *atual* de cada câmara,
+  mas não a pode guardar. Para histórico usa `npm start`.
+
+O ficheiro `worldsnapshots.html` incluído no repositório não tem catálogo embutido.
+É gerado a partir de `static/template.html` e reaproveita o código das fontes de
+`src/providers/`; volta a gerá-lo com `node src/cli.js build-static --no-catalog --out worldsnapshots.html`.
+
 ## Fontes incluídas (públicas, sem chave)
 
 | id | Fonte | Local |

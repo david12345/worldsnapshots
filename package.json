@@ -9,6 +9,7 @@
     "start": "node src/cli.js serve",
     "discover": "node src/cli.js discover",
     "sync": "node src/cli.js sync",
+    "build:static": "node src/cli.js build-static",
     "test": "node --test test/*.test.js"
   },
   "license": "MIT"

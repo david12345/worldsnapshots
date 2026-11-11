@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorldSnapshots</title>
+<!-- Versão sem servidor: gerada por `npm run build:static` a partir de static/template.html. -->
+<style>
+:root {
+  --bg: #f6f7f9; --fg: #15181d; --muted: #5d6673; --card: #fff; --line: #e2e5ea;
+  --accent: #2563eb; --accent-fg: #fff; --ok: #15803d; --err: #b91c1c;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1216; --fg: #e8ebef; --muted: #98a2b0; --card: #181c22; --line: #29303a; --accent: #3b82f6; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+header { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; padding: 16px; }
+h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+.brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.actions { display: flex; gap: 8px; }
+button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+button.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+button:disabled { opacity: .55; cursor: progress; }
+.bar { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; justify-content: space-between; }
+.status { color: var(--muted); font-size: 13px; }
+.status .err { color: var(--err); }
+.timeline { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; max-width: 640px; }
+.timeline input[type=range] { flex: 1; min-width: 0; }
+#run-label, #m-label { font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+.live { font-size: 13px; color: var(--muted); white-space: nowrap; }
+#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; transition: transform .12s; }
+.card:hover { transform: translateY(-2px); }
+.card .img { aspect-ratio: 16/10; background: #000; position: relative; }
+.card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .badge { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+.card .meta { padding: 8px 10px; }
+.card .city { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .name, .card .time { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty { text-align: center; color: var(--muted); padding: 48px 16px; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--fg); width: min(960px, calc(100vw - 32px)); padding: 16px; }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog h2 { margin: 0 32px 4px 0; font-size: 18px; }
+dialog p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+dialog img { width: 100%; max-height: 70vh; object-fit: contain; background: #000; border-radius: 8px; display: block; margin-bottom: 10px; }
+dialog .close { position: absolute; right: 12px; top: 12px; background: transparent; color: var(--fg); border: 0; font-size: 18px; }
+dialog .timeline { max-width: none; }
+@media (max-width: 520px) { #grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; } .card .name { display: none; } }
+
+.settings { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.settings select, .settings input { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.settings input { width: 180px; }
+.card.loading .img::after { content: 'a carregar…'; position: absolute; inset: 0; display: grid; place-items: center; color: #888; font-size: 12px; }
+.card .img img { opacity: 0; transition: opacity .3s; }
+.card .img img.ok { opacity: 1; }
+dialog a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>WorldSnapshots</h1>
+    <p>Câmaras públicas pelo mundo · versão sem servidor</p>
+  </div>
+  <div class="actions">
+    <button id="btn-sync" title="Recarregar as imagens das mesmas câmaras">⟳ Sincronizar</button>
+    <button id="btn-reshuffle" class="ghost" title="Escolher outras câmaras">🎲 Novas câmaras</button>
+  </div>
+</header>
+
+<section class="bar">
+  <div class="status" id="status">A pesquisar fontes…</div>
+  <div class="settings">
+    <label>Intervalo
+      <select id="sel-interval">
+        <option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option>
+        <option value="30">30 min</option><option value="60">1 h</option><option value="0">desligado</option>
+      </select>
+    </label>
+    <label>Câmaras
+      <select id="sel-count"><option>12</option><option>24</option><option>50</option><option>100</option></select>
+    </label>
+    <label title="Chave gratuita em api.windy.com/keys — ativa webcams de todo o mundo">Windy
+      <input id="inp-windy" type="password" placeholder="chave (opcional)" autocomplete="off">
+    </label>
+  </div>
+</section>
+
+<main id="grid" aria-live="polite"></main>
+<p id="empty" class="empty" hidden></p>
+
+<dialog id="modal">
+  <form method="dialog"><button class="close" aria-label="Fechar">✕</button></form>
+  <h2 id="m-title"></h2>
+  <p id="m-sub"></p>
+  <img id="m-img" alt="">
+</dialog>
+
+<script id="embedded-catalog" type="application/json">null</script>
+<script>
+'use strict';
+// ---- Código partilhado com a versão Node (embutido na build) ----
+// Normaliza as câmaras de uma fonte para o formato do catálogo.
+// Módulo puro (sem Node): também é embutido na versão HTML sem servidor.
+const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+
+function normalize(provider, raw) {
+  return raw
+    .filter((c) => c && c.rawId != null && isHttp(c.imageUrl))
+    .map((c) => ({
+      id: `${provider.id}:${c.rawId}`,
+      provider: provider.id,
+      providerName: provider.name,
+      group: c.group || provider.id,
+      name: String(c.name ?? c.rawId).trim(),
+      city: c.city || provider.city || '',
+      country: c.country || provider.country || '',
+      lat: Number.isFinite(c.lat) ? c.lat : null,
+      lon: Number.isFinite(c.lon) ? c.lon : null,
+      imageUrl: c.imageUrl,
+      ...(c.headers ? { headers: c.headers } : {}),
+    }));
+}
+
+
+// Seleção de câmaras: mantém as mesmas câmaras entre sincronizações (para se
+// poder comparar ao longo do tempo) e distribui-as por várias fontes/cidades.
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffle(arr, rng) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Devolve TODAS as câmaras do catálogo ordenadas por prioridade:
+ *  1. as da seleção anterior (ainda existentes), pela mesma ordem;
+ *  2. as restantes em round-robin entre grupos, respeitando maxPerGroup;
+ *  3. o resto (para substituir câmaras que falhem).
+ * Quem chama usa as primeiras N que funcionarem.
+ */
+function rankCandidates(cameras, { previousIds = [], maxPerGroup = 8, rng = Math.random } = {}) {
+  const byId = new Map(cameras.map((c) => [c.id, c]));
+  const used = new Set();
+  const counts = new Map();
+  const out = [];
+  const take = (c) => {
+    used.add(c.id);
+    counts.set(c.group, (counts.get(c.group) || 0) + 1);
+    out.push(c);
+  };
+
+  for (const id of previousIds) {
+    const c = byId.get(id);
+    if (c && !used.has(id)) take(c);
+  }
+
+  const groups = new Map();
+  for (const c of shuffle(cameras, rng)) {
+    if (used.has(c.id)) continue;
+    if (!groups.has(c.group)) groups.set(c.group, []);
+    groups.get(c.group).push(c);
+  }
+  const queues = shuffle([...groups.values()], rng);
+
+  const overflow = [];
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (const q of queues) {
+      const c = q.shift();
+      if (!c) continue;
+      progressed = true;
+      if ((counts.get(c.group) || 0) < maxPerGroup) take(c);
+      else overflow.push(c);
+    }
+  }
+  for (const c of overflow) take(c);
+  return out;
+}
+
+
+const __P_tfl = (() => {
+// Transport for London — JamCams (Londres, Reino Unido). Público, sem chave.
+// https://api.tfl.gov.uk/Place/Type/JamCam
+return {
+  id: 'tfl',
+  name: 'Transport for London JamCams',
+  city: 'Londres',
+  country: 'GB',
+  async discover({ getJson }) {
+    const data = await getJson('https://api.tfl.gov.uk/Place/Type/JamCam');
+    return data.flatMap((p) => {
+      const props = Object.fromEntries((p.additionalProperties || []).map((a) => [a.key, a.value]));
+      if (!props.imageUrl || props.available === 'false') return [];
+      return [{
+        rawId: p.id,
+        name: p.commonName,
+        city: 'Londres',
+        country: 'GB',
+        lat: p.lat,
+        lon: p.lon,
+        imageUrl: props.imageUrl,
+      }];
+    });
+  },
+};
+
+})();
+
+const __P_singapore = (() => {
+// Singapura — LTA Traffic Images via data.gov.sg. Público, sem chave.
+// Os URLs das imagens são temporários (assinados), por isso a fonte é "volátil":
+// é redescoberta em cada sincronização.
+return {
+  id: 'singapore',
+  name: 'Singapore LTA Traffic Images',
+  city: 'Singapura',
+  country: 'SG',
+  volatile: true,
+  async discover({ getJson }) {
+    const data = await getJson('https://api.data.gov.sg/v1/transport/traffic-images');
+    const cams = data?.items?.[0]?.cameras || [];
+    return cams.map((c) => ({
+      rawId: c.camera_id,
+      name: `Câmara ${c.camera_id}`,
+      city: 'Singapura',
+      country: 'SG',
+      lat: c.location?.latitude,
+      lon: c.location?.longitude,
+      imageUrl: c.image,
+    }));
+  },
+};
+
+})();
+
+const __P_nyc = (() => {
+// Nova Iorque — NYC DOT Traffic Management Center. Público, sem chave.
+// https://webcams.nyctmc.org/api/cameras
+return {
+  id: 'nyc',
+  name: 'NYC DOT Traffic Cameras',
+  city: 'Nova Iorque',
+  country: 'US',
+  async discover({ getJson }) {
+    const data = await getJson('https://webcams.nyctmc.org/api/cameras');
+    return data
+      .filter((c) => String(c.isOnline) !== 'false')
+      .map((c) => ({
+        rawId: c.id,
+        name: c.name,
+        city: 'Nova Iorque',
+        country: 'US',
+        lat: Number(c.latitude),
+        lon: Number(c.longitude),
+        imageUrl: c.imageUrl || `https://webcams.nyctmc.org/api/cameras/${c.id}/image`,
+      }));
+  },
+};
+
+})();
+
+const __P_digitraffic = (() => {
+// Finlândia — Digitraffic weather cameras (Fintraffic). Público, sem chave.
+// https://tie.digitraffic.fi/api/weathercam/v1/stations
+const HEADERS = { 'Digitraffic-User': 'worldsnapshots' };
+
+return {
+  id: 'digitraffic',
+  name: 'Digitraffic Weather Cameras',
+  city: 'Finlândia',
+  country: 'FI',
+  async discover({ getJson }) {
+    const data = await getJson('https://tie.digitraffic.fi/api/weathercam/v1/stations', { headers: HEADERS });
+    return (data.features || []).flatMap((f) => {
+      const p = f.properties || {};
+      if (p.collectionStatus && p.collectionStatus !== 'GATHERING') return [];
+      const preset = (p.presets || []).find((x) => x.inCollection !== false);
+      if (!preset) return [];
+      const [lon, lat] = f.geometry?.coordinates || [];
+      return [{
+        rawId: preset.id,
+        name: p.name,
+        city: p.name?.split('_')[0] || 'Finlândia',
+        country: 'FI',
+        lat,
+        lon,
+        imageUrl: `https://weathercam.digitraffic.fi/${preset.id}.jpg`,
+        headers: HEADERS,
+      }];
+    });
+  },
+};
+
+})();
+
+const __P_caltrans = (() => {
+// Califórnia — Caltrans CCTV (um ficheiro JSON por distrito). Público, sem chave.
+// https://cwwp2.dot.ca.gov/data/d7/cctv/cctvStatusD07.json
+const DISTRICTS = [
+  { d: 4, city: 'São Francisco (Bay Area)' },
+  { d: 7, city: 'Los Angeles' },
+  { d: 11, city: 'San Diego' },
+  { d: 3, city: 'Sacramento' },
+];
+
+return {
+  id: 'caltrans',
+  name: 'Caltrans CCTV',
+  city: 'Califórnia',
+  country: 'US',
+  async discover({ getJson }) {
+    const results = await Promise.allSettled(DISTRICTS.map(async ({ d, city }) => {
+      const dd = String(d).padStart(2, '0');
+      const data = await getJson(`https://cwwp2.dot.ca.gov/data/d${d}/cctv/cctvStatusD${dd}.json`);
+      return (data.data || []).flatMap(({ cctv }) => {
+        const url = cctv?.imageData?.static?.currentImageURL;
+        if (!url || cctv.inService === 'false') return [];
+        const loc = cctv.location || {};
+        return [{
+          rawId: `d${d}-${cctv.index}`,
+          name: loc.locationName || `CCTV ${cctv.index}`,
+          city: loc.nearbyPlace ? `${loc.nearbyPlace}, CA` : city,
+          country: 'US',
+          lat: Number(loc.latitude),
+          lon: Number(loc.longitude),
+          imageUrl: url,
+        }];
+      });
+    }));
+    const ok = results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+    if (!ok.length && results.length) throw results.find((r) => r.status === 'rejected').reason;
+    return ok;
+  },
+};
+
+})();
+
+const __P_hongkong = (() => {
+// Hong Kong — Transport Department traffic snapshots. Público, sem chave.
+// Lista de localizações em XML; imagens em https://tdcctv.data.one.gov.hk/<key>.JPG
+const LIST = 'https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.xml';
+
+const tag = (xml, name) => {
+  const m = xml.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+  return m ? m[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : undefined;
+};
+
+return {
+  id: 'hongkong',
+  name: 'Hong Kong Transport Department',
+  city: 'Hong Kong',
+  country: 'HK',
+  async discover({ getText }) {
+    const xml = await getText(LIST);
+    const blocks = xml.match(/<image>[\s\S]*?<\/image>/g) || [];
+    return blocks.flatMap((b) => {
+      const key = tag(b, 'key');
+      if (!key) return [];
+      return [{
+        rawId: key,
+        name: tag(b, 'description') || key,
+        city: tag(b, 'district') ? `${tag(b, 'district')}, Hong Kong` : 'Hong Kong',
+        country: 'HK',
+        lat: Number(tag(b, 'latitude')),
+        lon: Number(tag(b, 'longitude')),
+        imageUrl: tag(b, 'url') || `https://tdcctv.data.one.gov.hk/${key}.JPG`,
+      }];
+    });
+  },
+};
+
+})();
+
+const __P_ontario = (() => {
+// Ontário — 511ON (Toronto, Ottawa, …). Público, sem chave.
+// https://511on.ca/api/v2/get/cameras
+return {
+  id: 'ontario',
+  name: 'Ontario 511 Cameras',
+  city: 'Ontário',
+  country: 'CA',
+  async discover({ getJson }) {
+    const data = await getJson('https://511on.ca/api/v2/get/cameras?format=json');
+    return data.flatMap((c) => {
+      // A API já teve dois formatos: campo Url direto, ou lista Views[].
+      const views = c.Views?.length ? c.Views : [{ Id: 0, Url: c.Url, Status: c.Status }];
+      return views
+        .filter((v) => v.Url && !/disabled/i.test(v.Status || ''))
+        .map((v) => ({
+          rawId: `${c.Id}-${v.Id ?? 0}`,
+          name: [c.Roadway, c.Location || c.Name].filter(Boolean).join(' — ') || `Câmara ${c.Id}`,
+          city: c.Organization || c.Source || 'Ontário',
+          country: 'CA',
+          lat: Number(c.Latitude),
+          lon: Number(c.Longitude),
+          imageUrl: v.Url,
+        }));
+    });
+  },
+};
+
+})();
+
+const __P_windy = (() => {
+// Windy Webcams API v3 — dezenas de milhares de webcams em todo o mundo.
+// Requer chave gratuita: https://api.windy.com/keys  →  WINDY_API_KEY=...
+// Os URLs de imagem expiram, por isso a fonte é "volátil".
+return {
+  id: 'windy',
+  name: 'Windy Webcams (mundo)',
+  city: 'Mundo',
+  country: '—',
+  volatile: true,
+  enabled: (config) => Boolean(config.windyApiKey),
+  async discover({ getJson, config }) {
+    const headers = { 'x-windy-api-key': config.windyApiKey };
+    const pages = [0, 50, 100, 150].map(async (offset) => {
+      const url = `https://api.windy.com/webcams/api/v3/webcams?limit=50&offset=${offset}` +
+        '&sortKey=popularity&sortDirection=desc&include=images,location';
+      const data = await getJson(url, { headers });
+      return data.webcams || [];
+    });
+    const all = (await Promise.all(pages)).flat();
+    return all
+      .filter((w) => w.status === undefined || w.status === 'active')
+      .flatMap((w) => {
+        const img = w.images?.current?.preview || w.images?.current?.thumbnail;
+        if (!img) return [];
+        return [{
+          rawId: w.webcamId,
+          name: w.title,
+          city: w.location?.city || w.location?.region || 'Desconhecido',
+          country: w.location?.country_code || w.location?.country || '—',
+          lat: w.location?.latitude,
+          lon: w.location?.longitude,
+          imageUrl: img,
+          // Fonte independente por país para efeitos de diversidade na seleção.
+          group: `windy:${w.location?.country_code || w.location?.country || '?'}`,
+        }];
+      });
+  },
+};
+
+})();
+
+const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltrans, __P_hongkong, __P_ontario, __P_windy];
+
+// ---- Aplicação ----
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('ws:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch { /* sem storage */ } },
+  };
+
+  const settings = {
+    interval: store.get('interval', 5),
+    count: store.get('count', 50),
+    windyApiKey: store.get('windy', ''),
+    maxPerGroup: 8,
+  };
+
+  const embedded = (() => {
+    try { return JSON.parse($('#embedded-catalog').textContent) || null; } catch { return null; }
+  })();
+
+  const state = {
+    cameras: new Map(),      // id -> câmara
+    status: {},              // provider id -> { ok, count, error, live }
+    queue: [],               // candidatos ainda não usados
+    shown: [],               // câmaras visíveis (ordem da grelha)
+    failed: new Set(),
+    lastSync: null,
+    nextSync: null,
+    timer: null,
+  };
+
+  const flag = (cc) => (/^[A-Z]{2}$/i.test(cc || '')
+    ? String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0))) : '🌐');
+  const fmt = (d) => d.toLocaleTimeString('pt-PT');
+  const pageIsHttps = location.protocol === 'https:';
+
+  // ---- HTTP no browser (sujeito a CORS) ----
+  async function req(url, { headers = {} } = {}) {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res;
+  }
+  const ctx = {
+    getJson: async (u, o) => (await req(u, o)).json(),
+    getText: async (u, o) => (await req(u, o)).text(),
+    get config() { return { windyApiKey: settings.windyApiKey }; },
+  };
+
+  function setProviderCams(p, cams, info) {
+    for (const [id, c] of state.cameras) if (c.provider === p.id) state.cameras.delete(id);
+    for (const c of cams) {
+      if (pageIsHttps && c.imageUrl.startsWith('http:')) continue; // conteúdo misto bloqueado
+      delete c.headers;
+      state.cameras.set(c.id, c);
+    }
+    state.status[p.id] = { name: p.name, ...info };
+  }
+
+  async function discoverLive(p) {
+    try {
+      const cams = normalize(p, await p.discover(ctx));
+      setProviderCams(p, cams, { ok: true, count: cams.length, live: true });
+    } catch (e) {
+      const prev = state.status[p.id];
+      // Sem acesso direto (normalmente CORS): usa o catálogo embutido, se existir.
+      state.status[p.id] = prev?.count
+        ? { ...prev, live: false, error: e.message }
+        : { name: p.name, ok: false, count: 0, error: e.message };
+    }
+  }
+
+  const activeProviders = () => PROVIDERS.filter((p) => (p.enabled ? p.enabled(ctx.config) : true));
+
+  async function loadCatalog() {
+    if (embedded?.cameras?.length) {
+      for (const p of PROVIDERS) {
+        const cams = embedded.cameras.filter((c) => c.provider === p.id);
+        if (cams.length) setProviderCams(p, cams, { ok: true, count: cams.length, live: false });
+      }
+    }
+    await Promise.all(activeProviders().map(discoverLive));
+  }
+
+  // ---- Seleção e grelha ----
+  function select(reshuffle) {
+    const prev = reshuffle ? [] : store.get('selection', []);
+    const ranked = rankCandidates([...state.cameras.values()], { previousIds: prev, maxPerGroup: settings.maxPerGroup });
+    state.failed.clear();
+    state.shown = ranked.slice(0, settings.count);
+    state.queue = ranked.slice(settings.count);
+    renderGrid();
+  }
+
+  const withBuster = (c, t) => {
+    const p = PROVIDERS.find((x) => x.id === c.provider);
+    if (p?.volatile) return c.imageUrl; // URLs assinados: não se podem alterar
+    return c.imageUrl + (c.imageUrl.includes('?') ? '&' : '?') + '_ws=' + t;
+  };
+
+  function nextCandidate() {
+    while (state.queue.length) {
+      const c = state.queue.shift();
+      if (state.cameras.has(c.id) && !state.failed.has(c.id)) return state.cameras.get(c.id);
+    }
+    return null;
+  }
+
+  function makeCard(cam, t) {
+    const el = document.createElement('article');
+    el.className = 'card loading';
+    el.innerHTML = '<div class="img"><img alt="" referrerpolicy="no-referrer"><span class="badge"></span></div>' +
+      '<div class="meta"><div class="city"></div><div class="name"></div><div class="time"></div></div>';
+    el.addEventListener('click', () => openCamera(el._cam, el.querySelector('img').src));
+    const img = el.querySelector('img');
+    img.addEventListener('load', () => {
+      // Imagens minúsculas costumam ser "câmara indisponível".
+      if (img.naturalWidth < 120 || img.naturalHeight < 80) return img.dispatchEvent(new Event('error'));
+      el.classList.remove('loading');
+      img.classList.add('ok');
+      el.querySelector('.time').textContent = 'atualizado ' + fmt(new Date());
+      saveSelection();
+    });
+    img.addEventListener('error', () => {
+      state.failed.add(el._cam.id);
+      const repl = nextCandidate();
+      if (!repl) { el.remove(); state.shown = state.shown.filter((c) => c.id !== el._cam.id); renderStatus(); return; }
+      const i = state.shown.findIndex((c) => c.id === el._cam.id);
+      if (i >= 0) state.shown[i] = repl;
+      fillCard(el, repl, Date.now());
+    });
+    fillCard(el, cam, t);
+    return el;
+  }
+
+  function fillCard(el, cam, t) {
+    el._cam = cam;
+    el.dataset.id = cam.id;
+    el.classList.add('loading');
+    el.querySelector('img').classList.remove('ok');
+    el.querySelector('img').alt = cam.name + ' — ' + cam.city;
+    el.querySelector('.badge').textContent = cam.providerName || cam.provider;
+    el.querySelector('.city').textContent = flag(cam.country) + ' ' + cam.city;
+    el.querySelector('.name').textContent = cam.name;
+    el.querySelector('.time').textContent = '';
+    el.querySelector('img').src = withBuster(cam, t);
+  }
+
+  function renderGrid() {
+    const t = Date.now();
+    $('#grid').replaceChildren(...state.shown.map((c) => makeCard(c, t)));
+    const empty = $('#empty');
+    empty.hidden = state.shown.length > 0;
+    empty.innerHTML = 'Nenhuma fonte respondeu diretamente ao browser (normalmente por CORS). ' +
+      'Gera a versão com catálogo embutido com <code>npm run build:static</code>, ' +
+      'ou adiciona uma chave Windy acima.';
+    renderStatus();
+  }
+
+  let saveTimer;
+  function saveSelection() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => store.set('selection', state.shown.map((c) => c.id)), 1000);
+  }
+
+  // ---- Sincronização periódica ----
+  async function sync() {
+    $('#btn-sync').disabled = true;
+    // Fontes com URLs temporários têm de ser redescobertas para obter imagens novas.
+    await Promise.all(activeProviders().filter((p) => p.volatile).map(discoverLive));
+    const t = Date.now();
+    for (const el of $('#grid').children) {
+      const cam = state.cameras.get(el._cam.id) || el._cam;
+      el._cam = cam;
+      el.querySelector('img').src = withBuster(cam, t);
+    }
+    state.lastSync = new Date();
+    $('#btn-sync').disabled = false;
+    schedule();
+  }
+
+  function schedule() {
+    clearTimeout(state.timer);
+    state.nextSync = settings.interval > 0 ? Date.now() + settings.interval * 60000 : null;
+    if (state.nextSync) state.timer = setTimeout(sync, settings.interval * 60000);
+    renderStatus();
+  }
+
+  function renderStatus() {
+    const st = Object.values(state.status);
+    const parts = [];
+    parts.push(state.shown.length + ' câmaras visíveis de ' + state.cameras.size.toLocaleString('pt-PT'));
+    parts.push(st.filter((s) => s.ok).length + '/' + st.length + ' fontes');
+    if (state.lastSync) parts.push('sincronizado às ' + fmt(state.lastSync));
+    if (state.nextSync) {
+      const s = Math.max(0, Math.round((state.nextSync - Date.now()) / 1000));
+      parts.push('próximo em ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'));
+    }
+    $('#status').textContent = parts.join(' · ');
+    $('#status').title = Object.entries(state.status).map(([id, s]) =>
+      (s.ok ? '✓ ' : '✗ ') + (s.name || id) + ': ' +
+      (s.ok ? s.count + ' câmaras' + (s.live ? ' (ao vivo)' : ' (catálogo embutido)') : s.error)).join('\n') +
+      (embedded?.builtAt ? '\n\nCatálogo embutido de ' + new Date(embedded.builtAt).toLocaleString('pt-PT') : '');
+  }
+
+  function openCamera(c, src) {
+    $('#m-title').textContent = flag(c.country) + ' ' + c.city + ' — ' + c.name;
+    const sub = $('#m-sub');
+    sub.textContent = c.providerName + ' ';
+    if (c.lat != null) {
+      const a = document.createElement('a');
+      a.href = 'https://www.openstreetmap.org/?mlat=' + c.lat + '&mlon=' + c.lon + '#map=16/' + c.lat + '/' + c.lon;
+      a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '· ver no mapa';
+      sub.append(a);
+    }
+    $('#m-img').src = src;
+    $('#modal').showModal();
+  }
+
+  // ---- Controlos ----
+  $('#sel-interval').value = String(settings.interval);
+  $('#sel-count').value = String(settings.count);
+  $('#inp-windy').value = settings.windyApiKey;
+  $('#sel-interval').onchange = (e) => { settings.interval = Number(e.target.value); store.set('interval', settings.interval); schedule(); };
+  $('#sel-count').onchange = (e) => { settings.count = Number(e.target.value); store.set('count', settings.count); select(false); };
+  $('#inp-windy').onchange = async (e) => {
+    settings.windyApiKey = e.target.value.trim();
+    store.set('windy', settings.windyApiKey);
+    $('#status').textContent = 'A pesquisar webcams Windy…';
+    const w = PROVIDERS.find((p) => p.id === 'windy');
+    if (settings.windyApiKey) await discoverLive(w); else setProviderCams(w, [], { ok: false, count: 0, error: 'sem chave' });
+    select(true);
+  };
+  $('#btn-sync').onclick = () => sync();
+  $('#btn-reshuffle').onclick = () => select(true);
+  setInterval(renderStatus, 1000);
+
+  loadCatalog().then(() => { select(false); state.lastSync = new Date(); schedule(); });
+})();
+</script>
+</body>
+</html>
