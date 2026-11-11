@@ -7,6 +7,7 @@ export default {
   city: 'Mundo',
   country: '—',
   volatile: true,
+  signedUrls: true,
   enabled: (config) => Boolean(config.windyApiKey),
   async discover({ getJson, config, near }) {
     const headers = { 'x-windy-api-key': config.windyApiKey };

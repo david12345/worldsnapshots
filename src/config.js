@@ -22,6 +22,7 @@ export const config = {
   concurrency: num(process.env.CONCURRENCY, 8),
   timeoutMs: num(process.env.HTTP_TIMEOUT_MS, 20000),
   windyApiKey: process.env.WINDY_API_KEY || '',
+  ontario511Key: process.env.ONTARIO_511_KEY || '',
   /** Lista separada por vírgulas de fontes a usar (vazio = todas). */
   providers: (process.env.PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean),
   userAgent: process.env.USER_AGENT || 'worldsnapshots/0.1 (+https://github.com/)',

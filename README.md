@@ -51,7 +51,10 @@ espalhadas pelo mundo, mostra **as câmaras mais próximas de ti**.
 
 - **Localização:** 📍 usa a posição do dispositivo (o browser pede autorização),
   ou procura uma cidade/morada (OpenStreetMap Nominatim), ou escreve `lat, lon`.
-- **Raio** ajustável de 500 m a 250 km. As câmaras aparecem ordenadas pela
+- **Autorização:** ao abrir, a página explica porque precisa da localização e só
+  depois pede a autorização ao browser. Se a recusares, explica como desbloquear e
+  deixa procurar a cidade à mão.
+- **Raio** ajustável de 500 m a 1000 km. As câmaras aparecem ordenadas pela
   distância, com a direção (↗ 1,2 km NE). Se não houver nenhuma no raio, a página
   diz a que distância está a mais próxima e oferece-se para aumentar o raio.
 - Só são consultadas as fontes que cobrem o círculo escolhido (cada fonte tem uma
@@ -60,10 +63,16 @@ espalhadas pelo mundo, mostra **as câmaras mais próximas de ti**.
   câmaras em baixo substituídas pela seguinte mais próxima.
 - Local, raio e preferências ficam guardados no browser.
 
-> **Portugal e o resto do mundo:** as fontes sem chave cobrem Londres, Nova Iorque,
-> Califórnia, Ontário, Singapura, Hong Kong e Finlândia. Para câmaras em qualquer
-> outro sítio, cria uma chave gratuita em <https://api.windy.com/keys> e cola-a no
-> campo **Windy**. A pesquisa usa então as webcams Windy no teu raio (máx. 250 km).
+> **Portugal:** não há (que se conheça) uma API pública de câmaras em Portugal.
+> As mais próximas sem chave são as ~2000 câmaras da **DGT espanhola** (Galiza, Badajoz,
+> Huelva, Salamanca…) e as webcams mapeadas no **OpenStreetMap** à tua volta.
+> Para webcams em Portugal (praias, cidades), cria uma chave gratuita em
+> <https://api.windy.com/keys> e cola-a no campo **Windy** (raio máx. 250 km).
+
+O `worldsnapshots.html` do repositório já traz embutido um catálogo de ~9000
+câmaras (TfL, NYC, Caltrans, Digitraffic, Hong Kong, DGT), por isso funciona mesmo
+com fontes que não deixam o browser ler os dados diretamente (DGT e NYC).
+Para o atualizar: `npm run build:static -- --discover --out worldsnapshots.html`.
 
 Limitações em relação à versão com servidor:
 
@@ -80,9 +89,8 @@ Limitações em relação à versão com servidor:
 - **Localização:** o browser só dá a posição em `https://`, `localhost` ou num
   ficheiro aberto localmente; noutros casos procura o local à mão.
 
-O ficheiro `worldsnapshots.html` incluído no repositório não tem catálogo embutido.
-É gerado a partir de `static/template.html` e reaproveita o código das fontes de
-`src/providers/`; volta a gerá-lo com `node src/cli.js build-static --no-catalog --out worldsnapshots.html`.
+O ficheiro é gerado a partir de `static/template.html` e reaproveita o código das
+fontes de `src/providers/`.
 
 ## Fontes incluídas (públicas, sem chave)
 
@@ -91,10 +99,12 @@ O ficheiro `worldsnapshots.html` incluído no repositório não tem catálogo em
 | `tfl` | Transport for London JamCams | Londres 🇬🇧 |
 | `nyc` | NYC DOT Traffic Cameras | Nova Iorque 🇺🇸 |
 | `caltrans` | Caltrans CCTV (distritos 3, 4, 7, 11) | Califórnia 🇺🇸 |
-| `ontario` | 511 Ontario | Toronto/Ottawa 🇨🇦 |
 | `singapore` | LTA Traffic Images (data.gov.sg) | Singapura 🇸🇬 |
 | `hongkong` | Transport Department | Hong Kong 🇭🇰 |
 | `digitraffic` | Fintraffic weather cameras | Finlândia 🇫🇮 |
+| `dgt` | DGT — Dirección General de Tráfico (DATEX II) | Espanha 🇪🇸 |
+| `osm` | OpenStreetMap / Overpass — webcams mapeadas (só na versão por localização) | 🌍 |
+| `ontario` | 511 Ontario — **exige chave** `ONTARIO_511_KEY` desde 2026 | Toronto/Ottawa 🇨🇦 |
 | `windy` | **Windy Webcams API** — webcams no mundo inteiro (precisa de `WINDY_API_KEY` gratuita em <https://api.windy.com/keys>) | 🌍 |
 
 Com a chave Windy ativa, a seleção passa a cobrir dezenas de países
@@ -134,6 +144,7 @@ em `src/providers/` seguindo os existentes.
 | `CATALOG_MAX_AGE_HOURS` | 24 | |
 | `PROVIDERS` | todas | ex.: `tfl,nyc,singapore` |
 | `WINDY_API_KEY` | — | ativa a fonte mundial Windy |
+| `ONTARIO_511_KEY` | — | ativa a fonte 511 Ontario |
 | `DATA_DIR` | `./data` | |
 
 ## API

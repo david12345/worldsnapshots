@@ -36,7 +36,7 @@ test('cobertura das fontes por bbox', () => {
   assert.equal(providerCovers(tfl, ...LISBOA, 250), false);
   assert.equal(providerCovers(tfl, 51.0, -0.12, 50), true); // ~28 km a sul da bbox
   assert.equal(providerCovers(windy, ...LISBOA, 1), true);   // sem bbox = global
-  assert.ok(builtinProviders.filter((p) => p.id !== 'windy').every((p) => p.bbox?.length === 4));
+  assert.ok(builtinProviders.filter((p) => !['windy', 'osm'].includes(p.id)).every((p) => p.bbox?.length === 4));
 });
 
 test('windy usa nearby quando há localização', async () => {

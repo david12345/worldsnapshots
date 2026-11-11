@@ -27,7 +27,7 @@ async function doSync({ reshuffle = false, count = config.count, ctx, fetchImage
   if (!catalog.cameras.length) throw new Error('Catálogo vazio — nenhuma fonte respondeu.');
 
   const prevSel = reshuffle ? null : await readJson(paths.selection());
-  const candidates = rankCandidates(catalog.cameras, {
+  const candidates = rankCandidates(catalog.cameras.filter((c) => c.imageUrl), {
     previousIds: prevSel?.ids || [],
     maxPerGroup: config.maxPerProvider,
   });

@@ -8,7 +8,8 @@ import { builtinProviders } from './providers/index.js';
 import { paths, readJson } from './store.js';
 
 const src = (...p) => fs.readFile(path.join(config.root, ...p), 'utf8');
-const PER_GROUP_LIMIT = 150;
+// A versão por localização precisa de todas as câmaras (não de uma amostra).
+const PER_GROUP_LIMIT = 5000;
 
 /** Converte um módulo ESM simples (sem imports usados) em código de script clássico. */
 function stripModule(code) {
@@ -44,8 +45,10 @@ export function trimCatalog(catalog) {
     const n = perGroup.get(c.group) || 0;
     if (n >= PER_GROUP_LIMIT) continue;
     perGroup.set(c.group, n + 1);
-    const { headers, ...rest } = c;
-    cameras.push(rest);
+    // Só os campos usados pela página, para o ficheiro ficar leve.
+    // (o nome da fonte e o grupo são repostos pela página a partir de PROVIDERS).
+    const { id, provider, name, city, country, lat, lon, imageUrl, pageUrl } = c;
+    cameras.push({ id, provider, name, city, country, lat, lon, imageUrl, ...(pageUrl ? { pageUrl } : {}) });
   }
   return cameras.length ? { builtAt: catalog.updatedAt || new Date().toISOString(), cameras } : null;
 }

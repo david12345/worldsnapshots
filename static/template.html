@@ -24,6 +24,15 @@
 .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
 .chips button { padding: 4px 10px; font-size: 13px; }
 .empty b { color: var(--fg); }
+.welcome { max-width: 520px; margin: 0 auto 24px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+.welcome .pin { font-size: 40px; }
+.welcome p { margin: 8px 0; }
+.welcome .fine { font-size: 12px; }
+.links { padding: 0 16px 24px; }
+.links h2 { font-size: 15px; margin: 8px 0; }
+.links ul { list-style: none; padding: 0; margin: 0; columns: 2 320px; }
+.links li { padding: 4px 0; break-inside: avoid; }
+.links a { color: var(--fg); }
 dialog a { color: var(--accent); }
 </style>
 </head>
@@ -46,7 +55,7 @@ dialog a { color: var(--accent); }
   <div class="status" id="status">A obter a localização…</div>
   <div class="settings">
     <label class="radius">Raio
-      <input id="inp-radius" type="range" min="0" max="14" step="1" aria-label="Raio de pesquisa">
+      <input id="inp-radius" type="range" min="0" max="19" step="1" aria-label="Raio de pesquisa">
       <span id="radius-label"></span>
     </label>
     <label>Máx.
@@ -67,6 +76,10 @@ dialog a { color: var(--accent); }
 
 <main id="grid" aria-live="polite"></main>
 <div id="empty" class="empty" hidden></div>
+<section id="links" class="links" hidden>
+  <h2>Outras webcams perto (página própria, sem imagem direta)</h2>
+  <ul></ul>
+</section>
 
 <dialog id="modal">
   <form method="dialog"><button class="close" aria-label="Fechar">✕</button></form>
@@ -89,15 +102,15 @@ dialog a { color: var(--accent); }
     set(k, v) { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch { /* sem storage */ } },
   };
 
-  const RADII = [0.5, 1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 250];
+  const RADII = [0.5, 1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1000];
   const PLACES = [
-    ['Londres', 51.5074, -0.1278], ['Nova Iorque', 40.758, -73.9855], ['Singapura', 1.3521, 103.8198],
+    ['Vigo', 42.2406, -8.7207], ['Madrid', 40.4168, -3.7038], ['Londres', 51.5074, -0.1278], ['Nova Iorque', 40.758, -73.9855], ['Singapura', 1.3521, 103.8198],
     ['Hong Kong', 22.3193, 114.1694], ['Helsínquia', 60.1699, 24.9384], ['Los Angeles', 34.0522, -118.2437],
     ['São Francisco', 37.7749, -122.4194], ['Toronto', 43.6532, -79.3832],
   ];
 
   const settings = {
-    radiusIdx: store.get('radiusIdx', 5),
+    radiusIdx: Math.min(store.get('radiusIdx', 9), 19),
     count: store.get('count', 50),
     interval: store.get('interval', 5),
     windyApiKey: store.get('windy', ''),
@@ -141,7 +154,8 @@ dialog a { color: var(--accent); }
   function setProviderCams(p, cams, info) {
     for (const [id, c] of state.cameras) if (c.provider === p.id) state.cameras.delete(id);
     for (const c of cams) {
-      if (pageIsHttps && c.imageUrl.startsWith('http:')) continue; // conteúdo misto bloqueado
+      if (pageIsHttps && c.imageUrl?.startsWith('http:')) c.imageUrl = null; // conteúdo misto bloqueado
+      if (!c.imageUrl && !c.pageUrl) continue;
       delete c.headers;
       state.cameras.set(c.id, c);
     }
@@ -165,7 +179,8 @@ dialog a { color: var(--accent); }
 
   if (embedded?.cameras?.length) {
     for (const p of PROVIDERS) {
-      const cams = embedded.cameras.filter((c) => c.provider === p.id);
+      const cams = embedded.cameras.filter((c) => c.provider === p.id)
+        .map((c) => ({ providerName: p.name, group: p.id, ...c }));
       if (cams.length) setProviderCams(p, cams, { ok: true, count: cams.length, live: false });
     }
   }
@@ -178,8 +193,14 @@ dialog a { color: var(--accent); }
     state.busy = true;
     renderStatus();
     // Fontes "por raio" (Windy) dependem do sítio; as outras só se consultam uma vez.
+    // As fontes sem CORS só funcionam com o catálogo embutido no ficheiro.
+    for (const p of coveringProviders()) {
+      if (p.cors === false && !state.status[p.id]) {
+        state.status[p.id] = { name: p.name, ok: false, count: 0, error: 'não permite leitura pelo browser (CORS) e não há catálogo embutido' };
+      }
+    }
     await Promise.all(coveringProviders()
-      .filter((p) => p.volatile || !state.loaded.has(p.id))
+      .filter((p) => p.cors !== false && (p.volatile || !state.loaded.has(p.id)))
       .map(discoverLive));
     if (seq !== areaSeq) return; // entretanto mudou o local/raio
     state.busy = false;
@@ -190,8 +211,9 @@ dialog a { color: var(--accent); }
 
   // ---- Grelha ----
   function render() {
-    const near = camerasNear([...state.cameras.values()], state.loc.lat, state.loc.lon, radiusKm())
-      .filter((c) => !state.failed.has(c.id));
+    const all = camerasNear([...state.cameras.values()], state.loc.lat, state.loc.lon, radiusKm());
+    const near = all.filter((c) => c.imageUrl && !state.failed.has(c.id));
+    renderLinks(all.filter((c) => !c.imageUrl && c.pageUrl));
     state.shown = near.slice(0, settings.count);
     state.queue = near.slice(settings.count);
     const t = Date.now();
@@ -202,7 +224,7 @@ dialog a { color: var(--accent); }
 
   const withBuster = (c, t) => {
     const p = PROVIDERS.find((x) => x.id === c.provider);
-    if (p?.volatile) return c.imageUrl; // URLs assinados: não se podem alterar
+    if (p?.signedUrls) return c.imageUrl; // URLs assinados: não se podem alterar
     return c.imageUrl + (c.imageUrl.includes('?') ? '&' : '?') + '_ws=' + t;
   };
 
@@ -249,6 +271,24 @@ dialog a { color: var(--accent); }
     img.src = withBuster(cam, t);
   }
 
+  // Webcams do OpenStreetMap que só têm página (sem imagem direta).
+  function renderLinks(list) {
+    const box = $('#links');
+    box.hidden = !list.length;
+    if (!list.length) return;
+    box.querySelector('ul').replaceChildren(...list.slice(0, 60).map((c) => {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = c.pageUrl; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = c.name + (c.city ? ' — ' + c.city : '');
+      const d = document.createElement('span');
+      d.className = 'dist';
+      d.textContent = fmtKm(c.distanceKm) + ' ' + compass(c.bearing) + ' ';
+      li.append(d, a);
+      return li;
+    }));
+  }
+
   function chips() {
     return '<div class="chips">' + PLACES.map(([n], i) =>
       '<button class="ghost" data-place="' + i + '">' + n + '</button>').join('') + '</div>';
@@ -259,12 +299,23 @@ dialog a { color: var(--accent); }
     if (state.shown.length || state.busy) { box.hidden = true; return; }
     box.hidden = false;
     if (!state.loc) {
-      box.innerHTML = '<b>Onde estás?</b><br>Carrega em 📍 <b>A minha localização</b> ou procura uma cidade.' +
-        '<br>Ou experimenta uma cidade com câmaras públicas:' + chips();
+      if (state.permission === 'denied') {
+        box.innerHTML = '<b>A localização está bloqueada para esta página.</b><br>' +
+          'Para a permitir: clica no ícone 🔒 (ou ⓘ) à esquerda do endereço → <b>Localização</b> → <b>Permitir</b>, e recarrega a página.' +
+          '<br>Em alternativa, escreve a tua cidade na caixa de pesquisa acima, ou escolhe:' + chips();
+      } else {
+        box.innerHTML = '<div class="welcome"><div class="pin">📍</div><b>Mostrar as câmaras perto de ti</b>' +
+          '<p>Para encontrar as câmaras públicas mais próximas, a página precisa de saber onde estás. ' +
+          'O browser vai pedir-te autorização.</p>' +
+          '<div class="chips"><button data-locate="1">Permitir acesso à localização</button></div>' +
+          '<p class="fine">A localização fica guardada só neste browser. Para pesquisar webcams à tua volta, as coordenadas ' +
+          'da zona são enviadas ao OpenStreetMap (e à Windy, se tiveres chave).</p></div>' +
+          'Preferes não partilhar? Escreve a cidade na caixa de pesquisa, ou escolhe:' + chips();
+      }
       return;
     }
     const r = radiusKm();
-    const nearest = nearestCamera([...state.cameras.values()].filter((c) => !state.failed.has(c.id)), state.loc.lat, state.loc.lon);
+    const nearest = nearestCamera([...state.cameras.values()].filter((c) => c.imageUrl && !state.failed.has(c.id)), state.loc.lat, state.loc.lon);
     let msg = 'Não há câmaras a menos de <b>' + fmtKm(r) + '</b> de ' + escapeHtml(state.loc.label || 'ti') + '.';
     if (nearest && nearest.distanceKm <= RADII.at(-1)) {
       const idx = RADII.findIndex((x) => x >= nearest.distanceKm);
@@ -292,6 +343,7 @@ dialog a { color: var(--accent); }
     if (!b) return;
     if (b.dataset.place) { const [n, lat, lon] = PLACES[b.dataset.place]; setLocation({ lat, lon, label: n }); }
     if (b.dataset.radius) setRadius(Number(b.dataset.radius));
+    if (b.dataset.locate) locate();
   });
 
   // ---- Sincronização periódica ----
@@ -370,7 +422,8 @@ dialog a { color: var(--accent); }
     navigator.geolocation.getCurrentPosition(
       (pos) => setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, label: 'a tua localização' }),
       (err) => {
-        $('#status').textContent = (err.code === 1 ? 'Localização recusada' : 'Não foi possível obter a localização') +
+        if (err.code === 1) state.permission = 'denied';
+        $('#status').textContent = (err.code === 1 ? 'Localização recusada' : 'Não foi possível obter a localização (' + err.message + ')') +
           ' — procura uma cidade ou escreve "lat, lon".';
         if (!state.loc) renderEmpty();
       },
@@ -422,8 +475,18 @@ dialog a { color: var(--accent); }
   $('#btn-sync').onclick = () => sync();
   setInterval(renderStatus, 1000);
 
-  if (state.loc) loadArea(); // último local usado
-  else { renderEmpty(); locate(); }
+  // Arranque: usa o último local e, se o browser já tiver autorização, atualiza a posição.
+  (async () => {
+    state.permission = 'prompt';
+    try {
+      const perm = await navigator.permissions.query({ name: 'geolocation' });
+      state.permission = perm.state;
+      perm.onchange = () => { state.permission = perm.state; if (perm.state === 'granted') locate(); else renderEmpty(); };
+    } catch { /* API de permissões indisponível */ }
+    if (state.loc) loadArea();
+    if (state.permission === 'granted') locate();
+    else if (!state.loc) { renderEmpty(); $('#status').textContent = 'À espera da tua localização.'; }
+  })();
 })();
 </script>
 </body>

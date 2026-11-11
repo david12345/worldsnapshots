@@ -12,7 +12,7 @@ import { makeCustomProvider } from '../src/providers/custom.js';
 import { normalize } from '../src/discovery.js';
 
 const ctx = (byUrl) => ({
-  config: { windyApiKey: 'k' },
+  config: { windyApiKey: 'k', ontario511Key: 'k' },
   getJson: async (url) => {
     const key = Object.keys(byUrl).find((k) => url.includes(k));
     if (!key) throw new Error(`sem fixture para ${url}`);
@@ -101,4 +101,35 @@ test('normalize descarta entradas inválidas', () => {
   ]);
   assert.equal(out.length, 1);
   assert.deepEqual([out[0].id, out[0].lat, out[0].city], ['p:1', null, 'C']);
+});
+
+test('dgt (DATEX II)', async () => {
+  const dgt = (await import('../src/providers/dgt.js')).default;
+  const xml = `<d2:payload><ns2:device xsi:type="fse:ExtendedDevice" id="176130" version="2"><ns2:typeOfDevice>camera</ns2:typeOfDevice>
+    <loc:roadDestination>BURGOS</loc:roadDestination><loc:roadName>A-62</loc:roadName>
+    <loc:latitude>42.2624</loc:latitude><loc:longitude>-3.9403</loc:longitude>
+    <lse:kilometerPoint>25.3</lse:kilometerPoint><lse:province>BURGOS</lse:province>
+    <fse:deviceUrl>https://etraffic.dgt.es/camarasEtraffic/176130.jpg</fse:deviceUrl></ns2:device></d2:payload>`;
+  const [c] = await dgt.discover({ getText: async () => xml });
+  assert.deepEqual([c.rawId, c.name, c.city, c.lat], ['176130', 'A-62 km 25.3 → Burgos', 'Burgos', 42.2624]);
+});
+
+test('osm: imagens diretas vs páginas', async () => {
+  const osm = (await import('../src/providers/osm.js')).default;
+  const urls = [];
+  const cams = await osm.discover({
+    near: { lat: 38.72, lon: -9.14, radiusKm: 500 },
+    getJson: async (u) => {
+      urls.push(u);
+      if (urls.length === 1) throw new Error('espelho em baixo');
+      return { elements: [
+        { type: 'node', id: 1, lat: 38.7, lon: -9.1, tags: { name: 'Praia', 'contact:webcam': 'https://ex.pt/cam/live.jpg' } },
+        { type: 'way', id: 2, center: { lat: 38.8, lon: -9.2 }, tags: { webcam: 'https://ex.pt/webcam-page' } },
+        { type: 'node', id: 3, lat: 38.8, lon: -9.2, tags: { webcam: 'nao-e-url' } },
+      ] };
+    },
+  });
+  assert.match(decodeURIComponent(urls[0]), /around:100000,/); // limitado a 100 km
+  assert.equal(urls.length, 2, 'tenta o espelho seguinte');
+  assert.deepEqual(cams.map((c) => [c.rawId, Boolean(c.imageUrl), Boolean(c.pageUrl)]), [['n1', true, false], ['w2', false, true]]);
 });

@@ -5,6 +5,8 @@ export default {
   name: 'NYC DOT Traffic Cameras',
   city: 'Nova Iorque',
   country: 'US',
+  /** O servidor não permite leitura direta pelo browser (sem CORS). */
+  cors: false,
   /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
   bbox: [40.48, -74.27, 40.93, -73.68],
   async discover({ getJson }) {

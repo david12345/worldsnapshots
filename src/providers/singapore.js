@@ -9,6 +9,7 @@ export default {
   /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
   bbox: [1.15, 103.6, 1.48, 104.1],
   volatile: true,
+  signedUrls: true,
   async discover({ getJson }) {
     const data = await getJson('https://api.data.gov.sg/v1/transport/traffic-images');
     const cams = data?.items?.[0]?.cameras || [];

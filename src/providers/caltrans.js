@@ -1,10 +1,10 @@
 // Califórnia — Caltrans CCTV (um ficheiro JSON por distrito). Público, sem chave.
 // https://cwwp2.dot.ca.gov/data/d7/cctv/cctvStatusD07.json
 const DISTRICTS = [
-  { d: 4, city: 'São Francisco (Bay Area)' },
-  { d: 7, city: 'Los Angeles' },
-  { d: 11, city: 'San Diego' },
-  { d: 3, city: 'Sacramento' },
+  { d: 1, city: 'Eureka' }, { d: 2, city: 'Redding' }, { d: 3, city: 'Sacramento' },
+  { d: 4, city: 'São Francisco (Bay Area)' }, { d: 5, city: 'San Luis Obispo' }, { d: 6, city: 'Fresno' },
+  { d: 7, city: 'Los Angeles' }, { d: 8, city: 'San Bernardino' }, { d: 9, city: 'Bishop' },
+  { d: 10, city: 'Stockton' }, { d: 11, city: 'San Diego' }, { d: 12, city: 'Orange County' },
 ];
 
 export default {

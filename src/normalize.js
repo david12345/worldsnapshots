@@ -4,7 +4,7 @@ const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
 
 export function normalize(provider, raw) {
   return raw
-    .filter((c) => c && c.rawId != null && isHttp(c.imageUrl))
+    .filter((c) => c && c.rawId != null && (isHttp(c.imageUrl) || isHttp(c.pageUrl)))
     .map((c) => ({
       id: `${provider.id}:${c.rawId}`,
       provider: provider.id,
@@ -15,7 +15,8 @@ export function normalize(provider, raw) {
       country: c.country || provider.country || '',
       lat: Number.isFinite(c.lat) ? c.lat : null,
       lon: Number.isFinite(c.lon) ? c.lon : null,
-      imageUrl: c.imageUrl,
+      imageUrl: isHttp(c.imageUrl) ? c.imageUrl : null,
+      ...(isHttp(c.pageUrl) ? { pageUrl: c.pageUrl } : {}),
       ...(c.headers ? { headers: c.headers } : {}),
     }));
 }
