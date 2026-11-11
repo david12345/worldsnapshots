@@ -12,6 +12,8 @@ export default {
   name: 'Caltrans CCTV',
   city: 'Califórnia',
   country: 'US',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [32.5, -124.5, 42.1, -114.1],
   async discover({ getJson }) {
     const results = await Promise.allSettled(DISTRICTS.map(async ({ d, city }) => {
       const dd = String(d).padStart(2, '0');

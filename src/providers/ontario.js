@@ -5,6 +5,8 @@ export default {
   name: 'Ontario 511 Cameras',
   city: 'Ontário',
   country: 'CA',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [41.6, -95.2, 56.9, -74.3],
   async discover({ getJson }) {
     const data = await getJson('https://511on.ca/api/v2/get/cameras?format=json');
     return data.flatMap((c) => {

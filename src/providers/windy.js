@@ -8,12 +8,17 @@ export default {
   country: '—',
   volatile: true,
   enabled: (config) => Boolean(config.windyApiKey),
-  async discover({ getJson, config }) {
+  async discover({ getJson, config, near }) {
     const headers = { 'x-windy-api-key': config.windyApiKey };
-    const pages = [0, 50, 100, 150].map(async (offset) => {
-      const url = `https://api.windy.com/webcams/api/v3/webcams?limit=50&offset=${offset}` +
-        '&sortKey=popularity&sortDirection=desc&include=images,location';
-      const data = await getJson(url, { headers });
+    // Com localização (versão sem servidor): webcams num raio (a API aceita até 250 km).
+    // Sem localização (servidor): as mais populares do mundo.
+    const base = 'https://api.windy.com/webcams/api/v3/webcams?limit=50&include=images,location';
+    const query = near
+      ? `&nearby=${near.lat.toFixed(4)},${near.lon.toFixed(4)},${Math.min(250, Math.max(1, Math.round(near.radiusKm)))}`
+      : '&sortKey=popularity&sortDirection=desc';
+    const offsets = near ? [0, 50] : [0, 50, 100, 150];
+    const pages = offsets.map(async (offset) => {
+      const data = await getJson(`${base}${query}&offset=${offset}`, { headers });
       return data.webcams || [];
     });
     const all = (await Promise.all(pages)).flat();

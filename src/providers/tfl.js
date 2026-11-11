@@ -5,6 +5,8 @@ export default {
   name: 'Transport for London JamCams',
   city: 'Londres',
   country: 'GB',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [51.25, -0.55, 51.72, 0.33],
   async discover({ getJson }) {
     const data = await getJson('https://api.tfl.gov.uk/Place/Type/JamCam');
     return data.flatMap((p) => {

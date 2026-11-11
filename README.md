@@ -41,14 +41,29 @@ npm test
    navegar pelas sincronizações, botão ▶ de timelapse, modo "ao vivo" que
    atualiza sozinho, e clique numa câmara para ver o histórico dela.
 
-## Versão sem servidor (um só ficheiro HTML)
+## Versão sem servidor: câmaras perto de ti
 
 Abre **`worldsnapshots.html`** diretamente no browser (duplo clique) ou publica-o
 em qualquer alojamento estático (GitHub Pages, Netlify…). Não precisa de Node.
 
-O browser vai buscar as listas de câmaras diretamente às APIs e mostra as imagens
-com `<img>`, recarregando-as no intervalo escolhido (1 min a 1 h). As preferências
-e a seleção de câmaras ficam guardadas no próprio browser.
+Esta versão tem uma lógica diferente da do servidor: em vez de 50 câmaras
+espalhadas pelo mundo, mostra **as câmaras mais próximas de ti**.
+
+- **Localização:** 📍 usa a posição do dispositivo (o browser pede autorização),
+  ou procura uma cidade/morada (OpenStreetMap Nominatim), ou escreve `lat, lon`.
+- **Raio** ajustável de 500 m a 250 km. As câmaras aparecem ordenadas pela
+  distância, com a direção (↗ 1,2 km NE). Se não houver nenhuma no raio, a página
+  diz a que distância está a mais próxima e oferece-se para aumentar o raio.
+- Só são consultadas as fontes que cobrem o círculo escolhido (cada fonte tem uma
+  `bbox` com a sua zona).
+- **Atualização** das imagens a cada 1 min a 1 h, máximo de câmaras visíveis, e
+  câmaras em baixo substituídas pela seguinte mais próxima.
+- Local, raio e preferências ficam guardados no browser.
+
+> **Portugal e o resto do mundo:** as fontes sem chave cobrem Londres, Nova Iorque,
+> Califórnia, Ontário, Singapura, Hong Kong e Finlândia. Para câmaras em qualquer
+> outro sítio, cria uma chave gratuita em <https://api.windy.com/keys> e cola-a no
+> campo **Windy**. A pesquisa usa então as webcams Windy no teu raio (máx. 250 km).
 
 Limitações em relação à versão com servidor:
 
@@ -62,6 +77,8 @@ Limitações em relação à versão com servidor:
   As imagens em si não têm este problema e funcionam a partir de qualquer fonte.
 - **Sem histórico/timelapse:** o browser mostra a imagem *atual* de cada câmara,
   mas não a pode guardar. Para histórico usa `npm start`.
+- **Localização:** o browser só dá a posição em `https://`, `localhost` ou num
+  ficheiro aberto localmente; noutros casos procura o local à mão.
 
 O ficheiro `worldsnapshots.html` incluído no repositório não tem catálogo embutido.
 É gerado a partir de `static/template.html` e reaproveita o código das fontes de

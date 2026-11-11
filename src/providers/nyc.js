@@ -5,6 +5,8 @@ export default {
   name: 'NYC DOT Traffic Cameras',
   city: 'Nova Iorque',
   country: 'US',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [40.48, -74.27, 40.93, -73.68],
   async discover({ getJson }) {
     const data = await getJson('https://webcams.nyctmc.org/api/cameras');
     return data

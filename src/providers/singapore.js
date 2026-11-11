@@ -6,6 +6,8 @@ export default {
   name: 'Singapore LTA Traffic Images',
   city: 'Singapura',
   country: 'SG',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [1.15, 103.6, 1.48, 104.1],
   volatile: true,
   async discover({ getJson }) {
     const data = await getJson('https://api.data.gov.sg/v1/transport/traffic-images');

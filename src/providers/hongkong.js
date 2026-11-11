@@ -12,6 +12,8 @@ export default {
   name: 'Hong Kong Transport Department',
   city: 'Hong Kong',
   country: 'HK',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [22.13, 113.82, 22.57, 114.44],
   async discover({ getText }) {
     const xml = await getText(LIST);
     const blocks = xml.match(/<image>[\s\S]*?<\/image>/g) || [];

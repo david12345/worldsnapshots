@@ -27,7 +27,8 @@ function wrapProvider(id, code) {
 }
 
 export async function buildSharedCode() {
-  const parts = [stripModule(await src('src/normalize.js')), stripModule(await src('src/select.js'))];
+  const parts = [];
+  for (const f of ['normalize.js', 'select.js', 'geo.js']) parts.push(stripModule(await src('src', f)));
   for (const p of builtinProviders) parts.push(wrapProvider(p.id, await src('src/providers', `${p.id}.js`)));
   parts.push(`const PROVIDERS = [${builtinProviders.map((p) => `__P_${p.id}`).join(', ')}];`);
   return parts.join('\n\n');

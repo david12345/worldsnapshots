@@ -49,11 +49,22 @@ dialog .timeline { max-width: none; }
 @media (max-width: 520px) { #grid { grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; } .card .name { display: none; } }
 
 .settings { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; color: var(--muted); }
-.settings select, .settings input { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
-.settings input { width: 180px; }
+.settings select, .settings input, .loc input { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.settings input { width: 150px; }
 .card.loading .img::after { content: 'a carregar…'; position: absolute; inset: 0; display: grid; place-items: center; color: #888; font-size: 12px; }
 .card .img img { opacity: 0; transition: opacity .3s; }
 .card .img img.ok { opacity: 1; }
+.loc { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.loc form { display: flex; gap: 6px; }
+.loc input[type=search] { width: 220px; padding: 6px 8px; }
+.radius { display: flex; align-items: center; gap: 8px; }
+.radius input { width: 160px; }
+#radius-label { min-width: 56px; font-variant-numeric: tabular-nums; color: var(--fg); font-weight: 600; }
+.dist { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 600; }
+.arrow { display: inline-block; transition: transform .2s; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+.chips button { padding: 4px 10px; font-size: 13px; }
+.empty b { color: var(--fg); }
 dialog a { color: var(--accent); }
 </style>
 </head>
@@ -61,34 +72,42 @@ dialog a { color: var(--accent); }
 <header>
   <div class="brand">
     <h1>WorldSnapshots</h1>
-    <p>Câmaras públicas pelo mundo · versão sem servidor</p>
+    <p>Câmaras públicas perto de ti</p>
   </div>
-  <div class="actions">
-    <button id="btn-sync" title="Recarregar as imagens das mesmas câmaras">⟳ Sincronizar</button>
-    <button id="btn-reshuffle" class="ghost" title="Escolher outras câmaras">🎲 Novas câmaras</button>
+  <div class="loc">
+    <button id="btn-locate" title="Usar a localização deste dispositivo">📍 A minha localização</button>
+    <form id="form-search">
+      <input id="inp-search" type="search" placeholder="Cidade, morada ou lat, lon" aria-label="Procurar local">
+      <button class="ghost" type="submit">Ir</button>
+    </form>
   </div>
 </header>
 
 <section class="bar">
-  <div class="status" id="status">A pesquisar fontes…</div>
+  <div class="status" id="status">A obter a localização…</div>
   <div class="settings">
-    <label>Intervalo
-      <select id="sel-interval">
-        <option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option>
-        <option value="30">30 min</option><option value="60">1 h</option><option value="0">desligado</option>
-      </select>
+    <label class="radius">Raio
+      <input id="inp-radius" type="range" min="0" max="14" step="1" aria-label="Raio de pesquisa">
+      <span id="radius-label"></span>
     </label>
-    <label>Câmaras
+    <label>Máx.
       <select id="sel-count"><option>12</option><option>24</option><option>50</option><option>100</option></select>
     </label>
-    <label title="Chave gratuita em api.windy.com/keys — ativa webcams de todo o mundo">Windy
+    <label>Atualizar
+      <select id="sel-interval">
+        <option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option>
+        <option value="30">30 min</option><option value="60">1 h</option><option value="0">nunca</option>
+      </select>
+    </label>
+    <button id="btn-sync" class="ghost" title="Recarregar as imagens agora">⟳</button>
+    <label title="Chave gratuita em api.windy.com/keys — webcams em todo o mundo, incluindo Portugal">Windy
       <input id="inp-windy" type="password" placeholder="chave (opcional)" autocomplete="off">
     </label>
   </div>
 </section>
 
 <main id="grid" aria-live="polite"></main>
-<p id="empty" class="empty" hidden></p>
+<div id="empty" class="empty" hidden></div>
 
 <dialog id="modal">
   <form method="dialog"><button class="close" aria-label="Fechar">✕</button></form>
@@ -195,6 +214,65 @@ function rankCandidates(cameras, { previousIds = [], maxPerGroup = 8, rng = Math
 }
 
 
+// Geometria simples (módulo puro: também embutido na versão sem servidor).
+const R_EARTH_KM = 6371.0088;
+const rad = (d) => (d * Math.PI) / 180;
+
+/** Distância em km entre dois pontos (fórmula de haversine). */
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const dLat = rad(lat2 - lat1);
+  const dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R_EARTH_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/** Rumo inicial em graus (0 = norte, 90 = este). */
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const y = Math.sin(rad(lon2 - lon1)) * Math.cos(rad(lat2));
+  const x = Math.cos(rad(lat1)) * Math.sin(rad(lat2)) - Math.sin(rad(lat1)) * Math.cos(rad(lat2)) * Math.cos(rad(lon2 - lon1));
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+function compass(deg) {
+  return ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(deg / 45) % 8];
+}
+
+/** Distância (km) de um ponto ao retângulo [minLat, minLon, maxLat, maxLon]; 0 se estiver dentro. */
+function distanceToBboxKm(lat, lon, bbox) {
+  const [minLat, minLon, maxLat, maxLon] = bbox;
+  const cLat = Math.min(Math.max(lat, minLat), maxLat);
+  const cLon = Math.min(Math.max(lon, minLon), maxLon);
+  return distanceKm(lat, lon, cLat, cLon);
+}
+
+/** Uma fonte cobre a zona se não tiver bbox (global) ou se o círculo tocar na bbox. */
+function providerCovers(provider, lat, lon, radiusKm) {
+  return !provider.bbox || distanceToBboxKm(lat, lon, provider.bbox) <= radiusKm;
+}
+
+/** Câmaras dentro do raio, ordenadas pela distância (acrescenta distanceKm e bearing). */
+function camerasNear(cameras, lat, lon, radiusKm) {
+  const out = [];
+  for (const c of cameras) {
+    if (c.lat == null || c.lon == null) continue;
+    const d = distanceKm(lat, lon, c.lat, c.lon);
+    if (d <= radiusKm) out.push({ ...c, distanceKm: d, bearing: bearingDeg(lat, lon, c.lat, c.lon) });
+  }
+  return out.sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
+/** A câmara mais próxima (fora do raio), para sugerir até onde aumentar. */
+function nearestCamera(cameras, lat, lon) {
+  let best = null;
+  for (const c of cameras) {
+    if (c.lat == null || c.lon == null) continue;
+    const d = distanceKm(lat, lon, c.lat, c.lon);
+    if (!best || d < best.distanceKm) best = { ...c, distanceKm: d };
+  }
+  return best;
+}
+
+
 const __P_tfl = (() => {
 // Transport for London — JamCams (Londres, Reino Unido). Público, sem chave.
 // https://api.tfl.gov.uk/Place/Type/JamCam
@@ -203,6 +281,8 @@ return {
   name: 'Transport for London JamCams',
   city: 'Londres',
   country: 'GB',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [51.25, -0.55, 51.72, 0.33],
   async discover({ getJson }) {
     const data = await getJson('https://api.tfl.gov.uk/Place/Type/JamCam');
     return data.flatMap((p) => {
@@ -232,6 +312,8 @@ return {
   name: 'Singapore LTA Traffic Images',
   city: 'Singapura',
   country: 'SG',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [1.15, 103.6, 1.48, 104.1],
   volatile: true,
   async discover({ getJson }) {
     const data = await getJson('https://api.data.gov.sg/v1/transport/traffic-images');
@@ -258,6 +340,8 @@ return {
   name: 'NYC DOT Traffic Cameras',
   city: 'Nova Iorque',
   country: 'US',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [40.48, -74.27, 40.93, -73.68],
   async discover({ getJson }) {
     const data = await getJson('https://webcams.nyctmc.org/api/cameras');
     return data
@@ -286,6 +370,8 @@ return {
   name: 'Digitraffic Weather Cameras',
   city: 'Finlândia',
   country: 'FI',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [59.6, 19.4, 70.1, 31.6],
   async discover({ getJson }) {
     const data = await getJson('https://tie.digitraffic.fi/api/weathercam/v1/stations', { headers: HEADERS });
     return (data.features || []).flatMap((f) => {
@@ -325,6 +411,8 @@ return {
   name: 'Caltrans CCTV',
   city: 'Califórnia',
   country: 'US',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [32.5, -124.5, 42.1, -114.1],
   async discover({ getJson }) {
     const results = await Promise.allSettled(DISTRICTS.map(async ({ d, city }) => {
       const dd = String(d).padStart(2, '0');
@@ -367,6 +455,8 @@ return {
   name: 'Hong Kong Transport Department',
   city: 'Hong Kong',
   country: 'HK',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [22.13, 113.82, 22.57, 114.44],
   async discover({ getText }) {
     const xml = await getText(LIST);
     const blocks = xml.match(/<image>[\s\S]*?<\/image>/g) || [];
@@ -396,6 +486,8 @@ return {
   name: 'Ontario 511 Cameras',
   city: 'Ontário',
   country: 'CA',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [41.6, -95.2, 56.9, -74.3],
   async discover({ getJson }) {
     const data = await getJson('https://511on.ca/api/v2/get/cameras?format=json');
     return data.flatMap((c) => {
@@ -429,12 +521,17 @@ return {
   country: '—',
   volatile: true,
   enabled: (config) => Boolean(config.windyApiKey),
-  async discover({ getJson, config }) {
+  async discover({ getJson, config, near }) {
     const headers = { 'x-windy-api-key': config.windyApiKey };
-    const pages = [0, 50, 100, 150].map(async (offset) => {
-      const url = `https://api.windy.com/webcams/api/v3/webcams?limit=50&offset=${offset}` +
-        '&sortKey=popularity&sortDirection=desc&include=images,location';
-      const data = await getJson(url, { headers });
+    // Com localização (versão sem servidor): webcams num raio (a API aceita até 250 km).
+    // Sem localização (servidor): as mais populares do mundo.
+    const base = 'https://api.windy.com/webcams/api/v3/webcams?limit=50&include=images,location';
+    const query = near
+      ? `&nearby=${near.lat.toFixed(4)},${near.lon.toFixed(4)},${Math.min(250, Math.max(1, Math.round(near.radiusKm)))}`
+      : '&sortKey=popularity&sortDirection=desc';
+    const offsets = near ? [0, 50] : [0, 50, 100, 150];
+    const pages = offsets.map(async (offset) => {
+      const data = await getJson(`${base}${query}&offset=${offset}`, { headers });
       return data.webcams || [];
     });
     const all = (await Promise.all(pages)).flat();
@@ -462,7 +559,7 @@ return {
 
 const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltrans, __P_hongkong, __P_ontario, __P_windy];
 
-// ---- Aplicação ----
+// ---- Aplicação: câmaras mais próximas da localização do utilizador ----
 (() => {
   const $ = (s) => document.querySelector(s);
   const store = {
@@ -470,31 +567,39 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
     set(k, v) { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch { /* sem storage */ } },
   };
 
+  const RADII = [0.5, 1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 250];
+  const PLACES = [
+    ['Londres', 51.5074, -0.1278], ['Nova Iorque', 40.758, -73.9855], ['Singapura', 1.3521, 103.8198],
+    ['Hong Kong', 22.3193, 114.1694], ['Helsínquia', 60.1699, 24.9384], ['Los Angeles', 34.0522, -118.2437],
+    ['São Francisco', 37.7749, -122.4194], ['Toronto', 43.6532, -79.3832],
+  ];
+
   const settings = {
-    interval: store.get('interval', 5),
+    radiusIdx: store.get('radiusIdx', 5),
     count: store.get('count', 50),
+    interval: store.get('interval', 5),
     windyApiKey: store.get('windy', ''),
-    maxPerGroup: 8,
   };
+  const radiusKm = () => RADII[settings.radiusIdx];
 
   const embedded = (() => {
     try { return JSON.parse($('#embedded-catalog').textContent) || null; } catch { return null; }
   })();
 
   const state = {
-    cameras: new Map(),      // id -> câmara
-    status: {},              // provider id -> { ok, count, error, live }
-    queue: [],               // candidatos ainda não usados
-    shown: [],               // câmaras visíveis (ordem da grelha)
-    failed: new Set(),
-    lastSync: null,
-    nextSync: null,
-    timer: null,
+    loc: store.get('loc', null), // { lat, lon, label, accuracy }
+    cameras: new Map(),
+    status: {},                  // por fonte: { ok, count, live, error }
+    loaded: new Set(),           // fontes já consultadas ao vivo
+    shown: [], queue: [], failed: new Set(),
+    lastSync: null, nextSync: null, timer: null, busy: false,
   };
 
   const flag = (cc) => (/^[A-Z]{2}$/i.test(cc || '')
     ? String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0))) : '🌐');
-  const fmt = (d) => d.toLocaleTimeString('pt-PT');
+  const fmtTime = (d) => d.toLocaleTimeString('pt-PT');
+  const fmtKm = (km) => (km < 1 ? Math.round(km * 1000) + ' m'
+    : km.toLocaleString('pt-PT', { maximumFractionDigits: km < 10 ? 1 : 0 }) + ' km');
   const pageIsHttps = location.protocol === 'https:';
 
   // ---- HTTP no browser (sujeito a CORS) ----
@@ -503,11 +608,13 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res;
   }
-  const ctx = {
+  const http = {
     getJson: async (u, o) => (await req(u, o)).json(),
     getText: async (u, o) => (await req(u, o)).text(),
-    get config() { return { windyApiKey: settings.windyApiKey }; },
   };
+  const providerConfig = () => ({ windyApiKey: settings.windyApiKey });
+  const activeProviders = () => PROVIDERS.filter((p) => (p.enabled ? p.enabled(providerConfig()) : true));
+  const coveringProviders = () => activeProviders().filter((p) => providerCovers(p, state.loc.lat, state.loc.lon, radiusKm()));
 
   function setProviderCams(p, cams, info) {
     for (const [id, c] of state.cameras) if (c.provider === p.id) state.cameras.delete(id);
@@ -520,38 +627,55 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
   }
 
   async function discoverLive(p) {
+    const near = { lat: state.loc.lat, lon: state.loc.lon, radiusKm: radiusKm() };
     try {
-      const cams = normalize(p, await p.discover(ctx));
+      const cams = normalize(p, await p.discover({ ...http, config: providerConfig(), near }));
       setProviderCams(p, cams, { ok: true, count: cams.length, live: true });
     } catch (e) {
       const prev = state.status[p.id];
-      // Sem acesso direto (normalmente CORS): usa o catálogo embutido, se existir.
+      // Sem acesso direto (normalmente CORS): fica com o catálogo embutido, se existir.
       state.status[p.id] = prev?.count
         ? { ...prev, live: false, error: e.message }
         : { name: p.name, ok: false, count: 0, error: e.message };
     }
+    state.loaded.add(p.id);
   }
 
-  const activeProviders = () => PROVIDERS.filter((p) => (p.enabled ? p.enabled(ctx.config) : true));
-
-  async function loadCatalog() {
-    if (embedded?.cameras?.length) {
-      for (const p of PROVIDERS) {
-        const cams = embedded.cameras.filter((c) => c.provider === p.id);
-        if (cams.length) setProviderCams(p, cams, { ok: true, count: cams.length, live: false });
-      }
+  if (embedded?.cameras?.length) {
+    for (const p of PROVIDERS) {
+      const cams = embedded.cameras.filter((c) => c.provider === p.id);
+      if (cams.length) setProviderCams(p, cams, { ok: true, count: cams.length, live: false });
     }
-    await Promise.all(activeProviders().map(discoverLive));
   }
 
-  // ---- Seleção e grelha ----
-  function select(reshuffle) {
-    const prev = reshuffle ? [] : store.get('selection', []);
-    const ranked = rankCandidates([...state.cameras.values()], { previousIds: prev, maxPerGroup: settings.maxPerGroup });
-    state.failed.clear();
-    state.shown = ranked.slice(0, settings.count);
-    state.queue = ranked.slice(settings.count);
-    renderGrid();
+  // ---- Carregar a zona: só consulta as fontes que cobrem o círculo ----
+  let areaSeq = 0;
+  async function loadArea() {
+    if (!state.loc) return;
+    const seq = ++areaSeq;
+    state.busy = true;
+    renderStatus();
+    // Fontes "por raio" (Windy) dependem do sítio; as outras só se consultam uma vez.
+    await Promise.all(coveringProviders()
+      .filter((p) => p.volatile || !state.loaded.has(p.id))
+      .map(discoverLive));
+    if (seq !== areaSeq) return; // entretanto mudou o local/raio
+    state.busy = false;
+    state.lastSync = new Date();
+    render();
+    schedule();
+  }
+
+  // ---- Grelha ----
+  function render() {
+    const near = camerasNear([...state.cameras.values()], state.loc.lat, state.loc.lon, radiusKm())
+      .filter((c) => !state.failed.has(c.id));
+    state.shown = near.slice(0, settings.count);
+    state.queue = near.slice(settings.count);
+    const t = Date.now();
+    $('#grid').replaceChildren(...state.shown.map((c) => makeCard(c, t)));
+    renderEmpty();
+    renderStatus();
   }
 
   const withBuster = (c, t) => {
@@ -560,19 +684,12 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
     return c.imageUrl + (c.imageUrl.includes('?') ? '&' : '?') + '_ws=' + t;
   };
 
-  function nextCandidate() {
-    while (state.queue.length) {
-      const c = state.queue.shift();
-      if (state.cameras.has(c.id) && !state.failed.has(c.id)) return state.cameras.get(c.id);
-    }
-    return null;
-  }
-
   function makeCard(cam, t) {
     const el = document.createElement('article');
     el.className = 'card loading';
     el.innerHTML = '<div class="img"><img alt="" referrerpolicy="no-referrer"><span class="badge"></span></div>' +
-      '<div class="meta"><div class="city"></div><div class="name"></div><div class="time"></div></div>';
+      '<div class="meta"><div class="city"><span class="dist"><span class="arrow">↑</span><span class="km"></span></span> <span class="place"></span></div>' +
+      '<div class="name"></div><div class="time"></div></div>';
     el.addEventListener('click', () => openCamera(el._cam, el.querySelector('img').src));
     const img = el.querySelector('img');
     img.addEventListener('load', () => {
@@ -580,14 +697,13 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
       if (img.naturalWidth < 120 || img.naturalHeight < 80) return img.dispatchEvent(new Event('error'));
       el.classList.remove('loading');
       img.classList.add('ok');
-      el.querySelector('.time').textContent = 'atualizado ' + fmt(new Date());
-      saveSelection();
+      el.querySelector('.time').textContent = 'atualizado ' + fmtTime(new Date());
     });
     img.addEventListener('error', () => {
       state.failed.add(el._cam.id);
-      const repl = nextCandidate();
-      if (!repl) { el.remove(); state.shown = state.shown.filter((c) => c.id !== el._cam.id); renderStatus(); return; }
+      const repl = state.queue.shift(); // a seguinte mais próxima
       const i = state.shown.findIndex((c) => c.id === el._cam.id);
+      if (!repl) { if (i >= 0) state.shown.splice(i, 1); el.remove(); renderEmpty(); renderStatus(); return; }
       if (i >= 0) state.shown[i] = repl;
       fillCard(el, repl, Date.now());
     });
@@ -599,42 +715,74 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
     el._cam = cam;
     el.dataset.id = cam.id;
     el.classList.add('loading');
-    el.querySelector('img').classList.remove('ok');
-    el.querySelector('img').alt = cam.name + ' — ' + cam.city;
+    const img = el.querySelector('img');
+    img.classList.remove('ok');
+    img.alt = cam.name + ' — ' + cam.city;
     el.querySelector('.badge').textContent = cam.providerName || cam.provider;
-    el.querySelector('.city').textContent = flag(cam.country) + ' ' + cam.city;
+    el.querySelector('.arrow').style.transform = 'rotate(' + Math.round(cam.bearing) + 'deg)';
+    el.querySelector('.km').textContent = fmtKm(cam.distanceKm) + ' ' + compass(cam.bearing);
+    el.querySelector('.place').textContent = '· ' + flag(cam.country) + ' ' + cam.city;
     el.querySelector('.name').textContent = cam.name;
     el.querySelector('.time').textContent = '';
-    el.querySelector('img').src = withBuster(cam, t);
+    img.src = withBuster(cam, t);
   }
 
-  function renderGrid() {
-    const t = Date.now();
-    $('#grid').replaceChildren(...state.shown.map((c) => makeCard(c, t)));
-    const empty = $('#empty');
-    empty.hidden = state.shown.length > 0;
-    empty.innerHTML = 'Nenhuma fonte respondeu diretamente ao browser (normalmente por CORS). ' +
-      'Gera a versão com catálogo embutido com <code>npm run build:static</code>, ' +
-      'ou adiciona uma chave Windy acima.';
-    renderStatus();
+  function chips() {
+    return '<div class="chips">' + PLACES.map(([n], i) =>
+      '<button class="ghost" data-place="' + i + '">' + n + '</button>').join('') + '</div>';
   }
 
-  let saveTimer;
-  function saveSelection() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => store.set('selection', state.shown.map((c) => c.id)), 1000);
+  function renderEmpty() {
+    const box = $('#empty');
+    if (state.shown.length || state.busy) { box.hidden = true; return; }
+    box.hidden = false;
+    if (!state.loc) {
+      box.innerHTML = '<b>Onde estás?</b><br>Carrega em 📍 <b>A minha localização</b> ou procura uma cidade.' +
+        '<br>Ou experimenta uma cidade com câmaras públicas:' + chips();
+      return;
+    }
+    const r = radiusKm();
+    const nearest = nearestCamera([...state.cameras.values()].filter((c) => !state.failed.has(c.id)), state.loc.lat, state.loc.lon);
+    let msg = 'Não há câmaras a menos de <b>' + fmtKm(r) + '</b> de ' + escapeHtml(state.loc.label || 'ti') + '.';
+    if (nearest && nearest.distanceKm <= RADII.at(-1)) {
+      const idx = RADII.findIndex((x) => x >= nearest.distanceKm);
+      msg += '<br>A mais próxima está a <b>' + fmtKm(nearest.distanceKm) + '</b> (' + escapeHtml(nearest.city) + ').' +
+        '<div class="chips"><button data-radius="' + idx + '">Aumentar o raio para ' + fmtKm(RADII[idx]) + '</button></div>';
+    } else {
+      const zones = activeProviders().filter((p) => p.bbox)
+        .map((p) => ({ p, d: distanceToBboxKm(state.loc.lat, state.loc.lon, p.bbox) }))
+        .sort((a, b) => a.d - b.d);
+      if (zones.length) msg += '<br>A zona com câmaras públicas sem chave mais próxima é <b>' + escapeHtml(zones[0].p.city) +
+        '</b>, a ' + fmtKm(zones[0].d) + '.';
+      if (!settings.windyApiKey) {
+        msg += '<br><br>Para câmaras <b>em qualquer parte do mundo</b> (incluindo Portugal), cria uma chave gratuita em ' +
+          '<a href="https://api.windy.com/keys" target="_blank" rel="noopener">api.windy.com/keys</a> e cola-a no campo <b>Windy</b> acima.';
+      }
+      msg += '<br><br>Ou experimenta:' + chips();
+    }
+    box.innerHTML = msg;
   }
+
+  const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
+
+  $('#empty').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.place) { const [n, lat, lon] = PLACES[b.dataset.place]; setLocation({ lat, lon, label: n }); }
+    if (b.dataset.radius) setRadius(Number(b.dataset.radius));
+  });
 
   // ---- Sincronização periódica ----
   async function sync() {
+    if (!state.loc || state.busy) return;
     $('#btn-sync').disabled = true;
     // Fontes com URLs temporários têm de ser redescobertas para obter imagens novas.
-    await Promise.all(activeProviders().filter((p) => p.volatile).map(discoverLive));
+    await Promise.all(coveringProviders().filter((p) => p.volatile).map(discoverLive));
     const t = Date.now();
     for (const el of $('#grid').children) {
-      const cam = state.cameras.get(el._cam.id) || el._cam;
-      el._cam = cam;
-      el.querySelector('img').src = withBuster(cam, t);
+      const fresh = state.cameras.get(el._cam.id);
+      if (fresh) el._cam = { ...el._cam, imageUrl: fresh.imageUrl };
+      el.querySelector('img').src = withBuster(el._cam, t);
     }
     state.lastSync = new Date();
     $('#btn-sync').disabled = false;
@@ -649,56 +797,111 @@ const PROVIDERS = [__P_tfl, __P_singapore, __P_nyc, __P_digitraffic, __P_caltran
   }
 
   function renderStatus() {
-    const st = Object.values(state.status);
     const parts = [];
-    parts.push(state.shown.length + ' câmaras visíveis de ' + state.cameras.size.toLocaleString('pt-PT'));
-    parts.push(st.filter((s) => s.ok).length + '/' + st.length + ' fontes');
-    if (state.lastSync) parts.push('sincronizado às ' + fmt(state.lastSync));
-    if (state.nextSync) {
-      const s = Math.max(0, Math.round((state.nextSync - Date.now()) / 1000));
-      parts.push('próximo em ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'));
+    if (state.loc) {
+      parts.push('📍 ' + (state.loc.label || state.loc.lat.toFixed(4) + ', ' + state.loc.lon.toFixed(4)) +
+        (state.loc.accuracy ? ' (±' + fmtKm(state.loc.accuracy / 1000) + ')' : ''));
     }
-    $('#status').textContent = parts.join(' · ');
+    if (state.busy) parts.push('a procurar câmaras…');
+    else if (state.loc) {
+      const covering = coveringProviders().filter((p) => state.status[p.id]?.ok).length;
+      const total = state.shown.length + state.queue.length;
+      parts.push(total + (total === 1 ? ' câmara' : ' câmaras') + ' até ' + fmtKm(radiusKm()) +
+        (state.queue.length ? ' (' + state.shown.length + ' visíveis)' : ''));
+      parts.push(covering + ' fonte' + (covering === 1 ? '' : 's') + ' nesta zona');
+      if (state.lastSync) parts.push('atualizado às ' + fmtTime(state.lastSync));
+      if (state.nextSync) {
+        const s = Math.max(0, Math.round((state.nextSync - Date.now()) / 1000));
+        parts.push('próximo em ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'));
+      }
+    }
+    $('#status').textContent = parts.join(' · ') || 'Escolhe um local.';
     $('#status').title = Object.entries(state.status).map(([id, s]) =>
       (s.ok ? '✓ ' : '✗ ') + (s.name || id) + ': ' +
-      (s.ok ? s.count + ' câmaras' + (s.live ? ' (ao vivo)' : ' (catálogo embutido)') : s.error)).join('\n') +
-      (embedded?.builtAt ? '\n\nCatálogo embutido de ' + new Date(embedded.builtAt).toLocaleString('pt-PT') : '');
+      (s.ok ? s.count + ' câmaras' + (s.live ? ' (ao vivo)' : ' (catálogo embutido)') : s.error)).join('\n');
   }
 
   function openCamera(c, src) {
     $('#m-title').textContent = flag(c.country) + ' ' + c.city + ' — ' + c.name;
     const sub = $('#m-sub');
-    sub.textContent = c.providerName + ' ';
-    if (c.lat != null) {
-      const a = document.createElement('a');
-      a.href = 'https://www.openstreetmap.org/?mlat=' + c.lat + '&mlon=' + c.lon + '#map=16/' + c.lat + '/' + c.lon;
-      a.target = '_blank'; a.rel = 'noopener';
-      a.textContent = '· ver no mapa';
-      sub.append(a);
-    }
+    sub.textContent = fmtKm(c.distanceKm) + ' para ' + compass(c.bearing) + ' · ' + c.providerName + ' ';
+    const a = document.createElement('a');
+    a.href = 'https://www.openstreetmap.org/directions?route=' + state.loc.lat + '%2C' + state.loc.lon + '%3B' + c.lat + '%2C' + c.lon;
+    a.target = '_blank'; a.rel = 'noopener';
+    a.textContent = '· ver no mapa';
+    sub.append(a);
     $('#m-img').src = src;
     $('#modal').showModal();
   }
 
+  // ---- Localização ----
+  function setLocation(loc) {
+    state.loc = loc;
+    store.set('loc', loc);
+    state.failed.clear();
+    loadArea();
+  }
+
+  function locate() {
+    if (!navigator.geolocation) { $('#status').textContent = 'Este browser não dá a localização — procura um local.'; return; }
+    $('#status').textContent = 'A pedir a localização ao browser…';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy, label: 'a tua localização' }),
+      (err) => {
+        $('#status').textContent = (err.code === 1 ? 'Localização recusada' : 'Não foi possível obter a localização') +
+          ' — procura uma cidade ou escreve "lat, lon".';
+        if (!state.loc) renderEmpty();
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  }
+
+  async function search(q) {
+    const m = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,; ]\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (m) return setLocation({ lat: Number(m[1]), lon: Number(m[2]), label: q.trim() });
+    $('#status').textContent = 'A procurar "' + q + '"…';
+    try {
+      // Geocodificação pelo OpenStreetMap (Nominatim).
+      const res = await http.getJson('https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=pt&q=' + encodeURIComponent(q));
+      if (!res.length) { $('#status').textContent = 'Não encontrei "' + q + '".'; return; }
+      setLocation({ lat: Number(res[0].lat), lon: Number(res[0].lon), label: res[0].display_name.split(',').slice(0, 2).join(',') });
+    } catch (e) {
+      $('#status').textContent = 'A pesquisa de locais falhou (' + e.message + '). Escreve as coordenadas: "38.72, -9.14".';
+    }
+  }
+
   // ---- Controlos ----
-  $('#sel-interval').value = String(settings.interval);
+  let radiusTimer;
+  function setRadius(idx) {
+    settings.radiusIdx = idx;
+    store.set('radiusIdx', idx);
+    $('#inp-radius').value = idx;
+    $('#radius-label').textContent = fmtKm(radiusKm());
+    clearTimeout(radiusTimer);
+    radiusTimer = setTimeout(() => { if (state.loc) { state.failed.clear(); loadArea(); } }, 400);
+  }
+
+  $('#inp-radius').value = settings.radiusIdx;
+  $('#radius-label').textContent = fmtKm(radiusKm());
   $('#sel-count').value = String(settings.count);
+  $('#sel-interval').value = String(settings.interval);
   $('#inp-windy').value = settings.windyApiKey;
+
+  $('#inp-radius').oninput = (e) => setRadius(Number(e.target.value));
+  $('#sel-count').onchange = (e) => { settings.count = Number(e.target.value); store.set('count', settings.count); if (state.loc) render(); };
   $('#sel-interval').onchange = (e) => { settings.interval = Number(e.target.value); store.set('interval', settings.interval); schedule(); };
-  $('#sel-count').onchange = (e) => { settings.count = Number(e.target.value); store.set('count', settings.count); select(false); };
-  $('#inp-windy').onchange = async (e) => {
+  $('#inp-windy').onchange = (e) => {
     settings.windyApiKey = e.target.value.trim();
     store.set('windy', settings.windyApiKey);
-    $('#status').textContent = 'A pesquisar webcams Windy…';
-    const w = PROVIDERS.find((p) => p.id === 'windy');
-    if (settings.windyApiKey) await discoverLive(w); else setProviderCams(w, [], { ok: false, count: 0, error: 'sem chave' });
-    select(true);
+    if (!settings.windyApiKey) setProviderCams(PROVIDERS.find((p) => p.id === 'windy'), [], { ok: false, count: 0, error: 'sem chave' });
+    loadArea();
   };
+  $('#btn-locate').onclick = locate;
+  $('#form-search').onsubmit = (e) => { e.preventDefault(); const q = $('#inp-search').value.trim(); if (q) search(q); };
   $('#btn-sync').onclick = () => sync();
-  $('#btn-reshuffle').onclick = () => select(true);
   setInterval(renderStatus, 1000);
 
-  loadCatalog().then(() => { select(false); state.lastSync = new Date(); schedule(); });
+  if (state.loc) loadArea(); // último local usado
+  else { renderEmpty(); locate(); }
 })();
 </script>
 </body>

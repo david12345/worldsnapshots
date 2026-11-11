@@ -7,6 +7,8 @@ export default {
   name: 'Digitraffic Weather Cameras',
   city: 'Finlândia',
   country: 'FI',
+  /** Zona coberta [minLat, minLon, maxLat, maxLon] — usada na pesquisa por localização. */
+  bbox: [59.6, 19.4, 70.1, 31.6],
   async discover({ getJson }) {
     const data = await getJson('https://tie.digitraffic.fi/api/weathercam/v1/stations', { headers: HEADERS });
     return (data.features || []).flatMap((f) => {
