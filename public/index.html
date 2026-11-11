@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WorldSnapshots</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>WorldSnapshots</h1>
+      <p id="subtitle">Câmaras públicas pelo mundo</p>
+    </div>
+    <div class="actions">
+      <button id="btn-sync" title="Tirar novos snapshots das mesmas câmaras">⟳ Sincronizar</button>
+      <button id="btn-reshuffle" class="ghost" title="Escolher outras câmaras">🎲 Novas câmaras</button>
+    </div>
+  </header>
+
+  <section class="bar">
+    <div class="status" id="status">A carregar…</div>
+    <div class="timeline">
+      <button id="btn-play" class="ghost" title="Timelapse de todas as sincronizações">▶</button>
+      <input id="slider" type="range" min="0" max="0" value="0" aria-label="Momento">
+      <span id="run-label">—</span>
+      <label class="live"><input type="checkbox" id="chk-live" checked> ao vivo</label>
+    </div>
+  </section>
+
+  <main id="grid" aria-live="polite"></main>
+  <p id="empty" class="empty" hidden>Ainda não há snapshots. Carrega em <b>Sincronizar</b> para tirar os primeiros.</p>
+
+  <dialog id="modal">
+    <form method="dialog"><button class="close" aria-label="Fechar">✕</button></form>
+    <h2 id="m-title"></h2>
+    <p id="m-sub"></p>
+    <img id="m-img" alt="">
+    <div class="timeline">
+      <button id="m-play" class="ghost">▶</button>
+      <input id="m-slider" type="range" min="0" max="0" value="0" aria-label="Histórico da câmara">
+      <span id="m-label"></span>
+    </div>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "exemplo-json",
+    "name": "Exemplo de API JSON genérica",
+    "city": "Cidade",
+    "country": "PT",
+    "url": "https://exemplo.org/api/cameras",
+    "headers": {},
+    "itemsPath": "data.cameras",
+    "fields": {
+      "id": "id",
+      "name": "title",
+      "lat": "position.lat",
+      "lon": "position.lng",
+      "imageUrl": "snapshot"
+    },
+    "imageTemplate": null,
+    "volatile": false,
+    "enabled": false
+  }
+]
